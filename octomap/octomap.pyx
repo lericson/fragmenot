@@ -414,8 +414,7 @@ cdef class OcTree:
             bool(ignoreUnknownCells),
             <double?>maxRange
         )
-        if hit:
-            end[0:3] = e.x(), e.y(), e.z()
+        end[0:3] = e.x(), e.y(), e.z()
         return hit
 
     read = _octree_read
