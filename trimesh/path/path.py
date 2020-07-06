@@ -330,6 +330,8 @@ class Path(object):
         bounds : (2, dimension) float
           AABB with (min, max) coordinates
         """
+        if len(self.vertices) < 2:
+            return
         # get the exact bounds of each entity
         # some entities (aka 3- point Arc) have bounds that can't
         # be generated from just bound box of vertices
@@ -612,7 +614,7 @@ class Path(object):
         digits : None, or int
           How many digits to consider when merging vertices
         """
-        if len(self.vertices) == 0:
+        if len(self.vertices) < 2:
             return
         if digits is None:
             digits = util.decimal_to_digits(
