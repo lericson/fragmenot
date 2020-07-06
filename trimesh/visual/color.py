@@ -567,6 +567,10 @@ def to_rgba(colors, dtype=np.uint8):
     # colors as numpy array
     colors = np.asanyarray(colors)
 
+    # this happens when given an empty sequence
+    if colors.size == 0:
+        return colors.reshape(-1, 4).astype(dtype)
+
     # integer value for opaque alpha given our datatype
     opaque = np.iinfo(dtype).max
 
