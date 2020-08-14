@@ -53,6 +53,11 @@ cdef class OcTreeNode:
         pass
     def __dealloc__(self):
         pass
+    def __bool__(self):
+        if self.thisptr:
+            return True
+        else:
+            return False
     def addValue(self, float p):
         """
         adds p to the node's logOdds value (with no boundary / threshold checking!)
@@ -417,6 +422,36 @@ cdef class OcTree:
         end[0:3] = e.x(), e.y(), e.z()
         return hit
 
+    def computeRayKeys(self, np.ndarray[DOUBLE_t, ndim=1] origin,
+                       np.ndarray[DOUBLE_t, ndim=1] end):
+        """
+        Traces a ray from origin to end (excluding), returning an OcTreeKey of
+        all nodes traversed by the beam. 
+
+        You still need to check if a node at that coordinate exists (e.g. with
+        search()).
+
+        Returns success of operation. Returning false usually means that one of
+        the coordinates is out of the OcTree's range.
+        """
+        cdef defs.KeyRay ray
+        cdef cppbool hit
+        hit = self.thisptr.computeRayKeys(
+            defs.point3d(origin[0], origin[1], origin[2]),
+            defs.point3d(end[0], end[1], end[2]),
+            ray
+        )
+        if not hit:
+            return None
+        raylist = []
+        for key in ray:
+            res = OcTreeKey()
+            res[0] = key[0]
+            res[1] = key[1]
+            res[2] = key[2]
+            raylist.append(res)
+        return raylist
+
     read = _octree_read
 
     def write(self, filename=None):
@@ -673,7 +708,7 @@ cdef class OcTree:
                                                <double>value[1],
                                                <double>value[2],
                                                <unsigned int?>depth)
-        return node
+        return node if node.thisptr else None
 
     def setBBXMax(self, np.ndarray[DOUBLE_t, ndim=1] max):
         """

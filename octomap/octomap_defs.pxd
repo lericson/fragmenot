@@ -1,5 +1,6 @@
 from libcpp cimport bool
 from libcpp.string cimport string
+from libcpp.vector cimport vector
 
 cdef extern from * nogil:
     cdef T dynamic_cast[T](void *) except +   # nullptr may also indicate failure
@@ -60,6 +61,11 @@ cdef extern from "octomap/OcTreeKey.h" namespace "octomap":
         OcTreeKey(unsigned short int a, unsigned short int b, unsigned short int c) except +
         OcTreeKey(OcTreeKey& other)
         unsigned short int& operator[](unsigned int i)
+    cdef cppclass KeyRay:
+        void reset()
+        size_t size()
+        vector[OcTreeKey].iterator begin()
+        vector[OcTreeKey].iterator end()
 
 cdef extern from "include_and_setting.h" namespace "octomap":
     cdef cppclass OccupancyOcTreeBase[T]:
@@ -114,6 +120,7 @@ cdef extern from "include_and_setting.h" namespace "octomap":
         bool deleteNode(point3d& value, unsigned int depth)
         bool castRay(point3d& origin, point3d& direction, point3d& end,
                      bool ignoreUnknownCells, double maxRange)
+        bool computeRayKeys(point3d& origin, point3d& end, KeyRay &ray)
         OcTree* read(string& filename)
         OcTree* read(istream& s)
         bool write(string& filename)
