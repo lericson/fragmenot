@@ -7,12 +7,14 @@ Trimesh, Scene, PointCloud, and Path objects.
 
 Works on all major platforms: Windows, Linux, and OSX.
 """
+import time
 import platform
 import collections
 import numpy as np
 
 import pyglet
 import pyglet.gl as gl
+from pyglet.text import Label
 
 from .trackball import Trackball
 
@@ -93,6 +95,9 @@ class SceneViewer(pyglet.window.Window):
         self.background = background
         # save initial camera transform
         self._initial_camera_transform = scene.camera_transform.copy()
+        # framerate tracking
+        self._t_last_frames = [time.time()]*8
+        self._frame_number = 0
 
         # a transform to offset lines slightly to avoid Z-fighting
         if self.offset_lines:
@@ -165,6 +170,10 @@ class SceneViewer(pyglet.window.Window):
                                               width=resolution[0],
                                               height=resolution[1],
                                               caption=caption)
+
+        # store a label with hud info
+        self._hud = Label(font_size=12, anchor_y='bottom',
+                          multiline=True, width=self.width)
 
         # add scene geometry to viewer geometry
         self._update_vertex_list()
@@ -304,6 +313,7 @@ class SceneViewer(pyglet.window.Window):
             'grid': False,
             'fullscreen': False,
             'wireframe': False,
+            'perspective': True,
             'ball': Trackball(
                 pose=self._initial_camera_transform,
                 size=self.scene.camera.resolution,
@@ -318,6 +328,7 @@ class SceneViewer(pyglet.window.Window):
                 self.update_flags()
         except BaseException:
             pass
+        self.scene.camera_transform[...] = self.view['ball'].pose
 
     def init_gl(self):
         """
@@ -481,10 +492,13 @@ class SceneViewer(pyglet.window.Window):
         """
         Toggle a rendered grid.
         """
-        # update state to next index
         self.view['grid'] = not self.view['grid']
-        # perform gl actions
         self.update_flags()
+
+    def toggle_perspective(self):
+        #self.reset_view({'perspective': not self.view['perspective']})
+        self.view['perspective'] = not self.view['perspective']
+        self._update_perspective(self.width, self.height)
 
     def update_flags(self):
         """
@@ -567,11 +581,25 @@ class SceneViewer(pyglet.window.Window):
         # get field of view and Z range from camera
         camera = self.scene.camera
 
-        # set perspective from camera data
-        gl.gluPerspective(camera.fov[1],
-                          width / float(height),
-                          camera.z_near,
-                          camera.z_far)
+        if self.view['perspective']:
+            # set perspective from camera data
+            gl.gluPerspective(camera.fov[1],
+                              width / float(height),
+                              camera.z_near,
+                              camera.z_far)
+        else:
+            # set orthographic projection from camera data
+            cx, cy, cz = np.r_[0.0, 0.0, 0.0] 
+            tcwx, tcwy, tcwz = self.scene.camera_transform[0:3, 3]
+            # recompute fov so ratio matches window size
+            fov = np.r_[camera.fov[0], camera.fov[0]*height/width]
+            cw, ch = 2*tcwz*np.arctan(np.radians(fov)/2)
+            cd     = 2000
+            left, right = cx + cw*np.r_[-0.5, 0.5]
+            bottom, up  = cy + ch*np.r_[-0.5, 0.5]
+            znear, zfar = cz + cd*np.r_[-0.5, 0.5]
+            gl.glOrtho(left, right, bottom, up, znear, zfar)
+
         gl.glMatrixMode(gl.GL_MODELVIEW)
 
         return width, height
@@ -642,6 +670,8 @@ class SceneViewer(pyglet.window.Window):
             self.maximize()
         elif symbol == pyglet.window.key.F:
             self.toggle_fullscreen()
+        elif symbol == pyglet.window.key.P:
+            self.toggle_perspective()
 
         if symbol in [
                 pyglet.window.key.LEFT,
@@ -773,9 +803,53 @@ class SceneViewer(pyglet.window.Window):
             if texture is not None:
                 gl.glDisable(texture.target)
 
+        self._update_fps()
+        self._update_hud()
+        self._draw_hud()
+
         if self._profile:
             profiler.stop()
             print(profiler.output_text(unicode=True, color=True))
+
+    def _update_fps(self):
+        t_this_frame = time.time()
+        self._frame_number += 1 & 0xffff
+        self._t_last_frames[self._frame_number % len(self._t_last_frames)] = t_this_frame
+        self._fps = len(self._t_last_frames)/np.ptp(self._t_last_frames)
+
+    def _draw_hud(self):
+        # Absolute black magic; reset projection matrix to orthographic with
+        # origin in the center of the viewport.
+        gl.glMatrixMode(gl.GL_PROJECTION)
+        gl.glPushMatrix()
+        gl.glLoadIdentity()
+        gl.gluOrtho2D(-self.width/2,  self.width/2,
+                      -self.height/2, self.height/2)
+
+        gl.glMatrixMode(gl.GL_MODELVIEW)
+        gl.glPushMatrix()
+        gl.glLoadIdentity()
+        gl.glTranslated(-self.width/2,  -self.height/2, 0.0)
+        self._hud.color = (255, 255, 255, 127)
+        self._hud.x -= 1
+        self._hud.y -= 1
+        self._hud.draw()
+        self._hud.x += 2
+        self._hud.y += 2
+        self._hud.draw()
+        self._hud.color = (  0,   0,   0, 255)
+        self._hud.x -= 1
+        self._hud.y -= 1
+        self._hud.draw()
+        gl.glPopMatrix()
+
+        gl.glMatrixMode(gl.GL_PROJECTION)
+        gl.glPopMatrix()
+
+        gl.glMatrixMode(gl.GL_MODELVIEW)
+
+    def _update_hud(self):
+        self._hud.text = f'FPS: {self._fps:.3g}'
 
     def save_image(self, file_obj):
         """
