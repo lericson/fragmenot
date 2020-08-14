@@ -1,4 +1,7 @@
--e .
+-e ${PWD}
+-e git+file://${PWD}@98a067e97cb10b0ff3d1eaf5624d9acdf9ec37a1#egg=octomap_python
+-e git+file://${PWD}@6f9e0b0166445101b9d3f660c501820938ba37f0#egg=trimesh
+-e git+file://${PWD}@38957e64d9c58222ca20f965c6617b9df98fa834#egg=pyembree
 autoprop==1.0.1
 cycler==0.10.0
 Cython==0.29.20
@@ -13,11 +16,9 @@ matplotlib==3.2.2
 more-itertools==8.3.0
 networkx==2.4
 numpy==1.18.5
--e git+https://github.com/wkentaro/octomap-python.git@8823d36e294e836780f67d874a89e113f1687717#egg=octomap_python
 packaging==20.4
 Pillow==7.1.2
 pkg-resources==0.0.0
-pyembree==0.1.6
 pyflakes==2.2.0
 pyglet==1.5.5
 pyparsing==2.4.7
@@ -31,5 +32,4 @@ scipy==1.4.1
 Shapely==1.7.0
 six==1.15.0
 tifffile==2020.6.3
--e git+hypnotoad.local:devel/src/trimesh@69e07fc48720c87ab1341022ceb98a77e7cca8da#egg=trimesh
 vecrec==0.3.0
