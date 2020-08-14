@@ -1,0 +1,35 @@
+-e .
+autoprop==1.0.1
+cycler==0.10.0
+Cython==0.29.20
+debugtools==0.2.0
+decorator==4.4.2
+distro==1.5.0
+glooey==0.3.0
+imageio==2.8.0
+kiwisolver==1.2.0
+logcolor==1.0.1
+matplotlib==3.2.2
+more-itertools==8.3.0
+networkx==2.4
+numpy==1.18.5
+-e git+https://github.com/wkentaro/octomap-python.git@8823d36e294e836780f67d874a89e113f1687717#egg=octomap_python
+packaging==20.4
+Pillow==7.1.2
+pkg-resources==0.0.0
+pyembree==0.1.6
+pyflakes==2.2.0
+pyglet==1.5.5
+pyparsing==2.4.7
+python-dateutil==2.8.1
+PyWavelets==1.1.1
+PyYAML==5.3.1
+Rtree==0.9.4
+scikit-build==0.11.1
+scikit-image==0.17.2
+scipy==1.4.1
+Shapely==1.7.0
+six==1.15.0
+tifffile==2020.6.3
+-e git+hypnotoad.local:devel/src/trimesh@69e07fc48720c87ab1341022ceb98a77e7cca8da#egg=trimesh
+vecrec==0.3.0

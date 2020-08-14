@@ -1,0 +1,69 @@
+tree_search:
+    # Number of steps. Order is breadth-first search.
+    # With an average degree of 6, finding all paths of k length deep needs
+    # 6**k steps.
+    #   6**k: 6, 36, 216, 1296, 7776, 46656, 279936
+    steps: 7776
+
+    # Maximum size of the search tree. If a floating-point number, it this is a
+    # multiplied by the number of steps. If an integer, taken as is.
+    max_size: 6.0
+
+prm:
+    # Size in meters of each bin in the spatial index. This is used to cull the
+    # number of attempted connections per node.
+    bin_size: 20
+
+    # Upper and lower bounds to set on the Z coordinates in roadmap generation.
+    z_bounds: [1.5, 3.5]
+
+gui:
+    # Whether to show jump edges as their own lines or not. They will be single
+    # lines between their endpoints, though the trajectory will be correctly
+    # computed as the sum of all the steps that a jump edge corresponds to.
+    show_jumps: true
+
+    perspective: true
+    follow: true
+
+parame:
+
+    # Profiles are an easy way to switch between option sets.
+    profile: near_sighted
+
+    near_sighted:
+        prm:
+            max_dist: 1.5
+            regular_grid: 1.5
+        sensors:
+            radius: 3.0
+
+    far_sighted:
+        prm:
+            max_dist: 2.5
+            regular_grid: 2.5 
+        sensors:
+            radius: 5.0
+
+    shortrange_ant:
+        prm:
+            max_dist: 1.0
+            regular_grid: 1.0
+        sensors:
+            radius: 2.0
+
+    longrange_ant:
+        prm:
+            max_dist: 1.0
+            regular_grid: 1.0
+        sensors:
+            radius: 4.0
+
+    test:
+        prm:
+            max_dist: 2.75
+            regular_grid: 2.75
+        sensors:
+            radius: 5.5
+        world:
+            resolution: 0.7
