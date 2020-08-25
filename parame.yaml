@@ -3,7 +3,7 @@ tree_search:
     # With an average degree of 6, finding all paths of k length deep needs
     # 6**k steps.
     #   6**k: 6, 36, 216, 1296, 7776, 46656, 279936
-    steps: 7776
+    steps: 30000
 
     # Maximum size of the search tree. If a floating-point number, it this is a
     # multiplied by the number of steps. If an integer, taken as is.
@@ -17,6 +17,9 @@ prm:
     # Upper and lower bounds to set on the Z coordinates in roadmap generation.
     z_bounds: [1.5, 3.5]
 
+world:
+    resolution:   0.4
+
 gui:
     # Whether to show jump edges as their own lines or not. They will be single
     # lines between their endpoints, though the trajectory will be correctly
@@ -25,45 +28,46 @@ gui:
 
     perspective: true
     follow: true
+    fov: 120
 
 parame:
 
     # Profiles are an easy way to switch between option sets.
-    profile: near_sighted
+    profile: shortrange
 
-    near_sighted:
+    shortrange:
         prm:
             max_dist: 1.5
             regular_grid: 1.5
         sensors:
             radius: 3.0
 
-    far_sighted:
+    longrange:
         prm:
             max_dist: 2.5
             regular_grid: 2.5 
         sensors:
             radius: 5.0
 
-    shortrange_ant:
-        prm:
-            max_dist: 1.0
-            regular_grid: 1.0
-        sensors:
-            radius: 2.0
+    # Our experiment conditions
+    pv000: {prevision: {max_distance: 0.00}}
+    pv010: {prevision: {max_distance: 0.10}}
+    pv025: {prevision: {max_distance: 0.25}}
+    pv050: {prevision: {max_distance: 0.50}}
+    pv100: {prevision: {max_distance: 1.00}}
+    pv200: {prevision: {max_distance: 2.00}}
+    pv300: {prevision: {max_distance: 3.00}}
+    pv400: {prevision: {max_distance: 4.00}}
+    pv500: {prevision: {max_distance: 5.00}}
+    pv800: {prevision: {max_distance: 8.00}}
 
-    longrange_ant:
-        prm:
-            max_dist: 1.0
-            regular_grid: 1.0
-        sensors:
-            radius: 4.0
-
+    # This configuration loads pretty fast
     test:
-        prm:
-            max_dist: 2.75
-            regular_grid: 2.75
-        sensors:
-            radius: 5.5
         world:
-            resolution: 0.7
+            resolution:   0.6
+        prevision:
+            max_distance: 100.0
+        tree_search:
+            steps:        30000
+        exploration:
+            close_on_finish: false

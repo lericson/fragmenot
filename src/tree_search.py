@@ -2,14 +2,20 @@
 
 import sys
 import logging
+import warnings
 
 import numpy as np
-import networkx as nx
 from networkx.utils import pairwise
 
 import gui
 import parame
 from tree import Tree, EdgeDataMap, NodeDataMap
+
+try:
+    import cts
+except ImportError as e:
+    warnings.warn(f'cts import failed: {e}')
+    cts = None
 
 
 log = logging.getLogger(__name__)
@@ -59,23 +65,34 @@ def stump(T, r):
 
 def statstr(a):
     a = np.atleast_1d(a)
-    return ', '.join([f'N={len(a)}',
-                      f'min={np.min(a):.5g}', f'mean={np.mean(a):.5g}',
-                      f'max={np.max(a):.5g}', f'std={np.std(a):.5g}'])
+    if len(a) == 0:
+        return 'N=0, min=?, mean=?, max=?, std=?'
+    elif len(a) == 1:
+        return f'N=1, min={a[0]}, mean={a[0]}, max={a[0]}, std=?'
+    else:
+        return ', '.join([f'N={len(a)}',
+                          f'min={np.min(a):.5g}', f'mean={np.mean(a):.5g}',
+                          f'max={np.max(a):.5g}', f'std={np.std(a):.5g}'])
 
 
 @parame.configurable
-def expand(T, *, roadmap, mesh,
-           max_depth:    cfg.param = 50,
-           steps:        cfg.param = 15000,
-           max_size:     cfg.param = 2.00,
-           lam:          cfg.param = 40e-2):
+def expand(T, *, roadmap,
+           max_depth: cfg.param = 50,
+           steps:     cfg.param = 15000,
+           max_size:  cfg.param = 2.00,
+           lam:       cfg.param = 50e-2,
+           min_faces: cfg.param = 1):
 
     if isinstance(max_size, float):
         max_size = int(steps*max_size)
 
+    if cts is not None:
+        return cts.expand(T, roadmap=roadmap, max_depth=max_depth, steps=steps,
+                          max_size=max_size, lam=lam, min_faces=min_faces)
+
+    log.warn('using pure python tree expansion')
+
     G = roadmap
-    N = mesh.faces.shape[0]
 
     R          = NodeDataMap(G, 'r')
     D          = EdgeDataMap(G, 'd')
@@ -93,21 +110,30 @@ def expand(T, *, roadmap, mesh,
 
     face_vis   = roadmap.graph['vis_faces']
     face_covis = roadmap.graph['covis_faces']
+    face_area  = roadmap.graph['area_faces']
 
     vis_unseen = face_vis & ~Seen[T.root]
 
-    # Compute face covisibility excluding seen faces
-    face_degree = face_covis.dot(vis_unseen.astype(np.uint32))
+    # Compute face covisibility area, excluding seen faces. We do this at a
+    # smaller length scale because of integer mathematics. Do not change to
+    # floats, it will waste vast amounts of memory.
+    face_degree = face_covis.dot((1e5*face_area*vis_unseen).astype(np.uint32))/1e5
+    face_degree[~face_vis] = 0
 
-    face_score = np.exp(-5e-3*((face_degree).clip(0, 2000)))
-    face_score[face_degree <= 1] = 1e-12
-    face_score[~vis_unseen]      = 1e-12
+    #for (i,) in zip(*np.nonzero(face_vis)):
+    #    assert (face_degree[i] == np.dot(face_covis[i], vis_unseen)), f'{i}: {face_degree[i]}'
 
-    gui.update_face_hsv(hues=0.8*face_score/face_score.max())
+    face_score = 1e2*np.exp(-1e-1*(face_degree.clip(0, 1000)))
+    face_score[face_degree < min_faces] = 1e-12
+    face_score[~vis_unseen]             = 1e-12
 
+    gui.update_face_hsv(hues=0.8/face_score.max()*face_score)
+    #gui.update_face_hsv(hues=0.8/face_degree.max()*face_degree)
+
+    log.info('  face_area: %s', statstr(face_area[vis_unseen]))
     log.info('face_degree: %s', statstr(face_degree[vis_unseen]))
-    log.info('face_score:  %s', statstr(face_score[vis_unseen]))
-    log.info('         d:  %s', statstr(list(D.values())))
+    log.info(' face_score: %s', statstr(face_score[vis_unseen]))
+    log.info('          d: %s', statstr(list(D.values())))
 
     def select_path():
         # SELECTION: find an unexplored branching point in the tree. Result is
@@ -152,13 +178,14 @@ def expand(T, *, roadmap, mesh,
         u, v     = path[-2:]
         s_u      = S[u]
         s_v      = S[v]
-        vis      = Vis_faces[s_u, s_v] & ~Seen[u]
+        vis      = Vis_faces[s_u, s_v] & ~Seen[u] & face_vis
         Dist[v]  = Dist[u]  + D[s_u, s_v]
         Depth[v] = Depth[u] + 1
         Seen[v]  = Seen[u] | vis
 
         # SIMULATION: estimate the reward from this new state
-        score = Score[v] = Score[u] + np.sum(face_score, where=vis) * np.exp(-lam*(Dist[v] - Dist[T.root]))
+        gain  = np.sum(face_score, where=vis) * np.exp(-lam*(Dist[v] - Dist[T.root]))
+        score = Score[v] = Score[u] + gain
 
         # Strict inequality ensures that if all nodes are equal (i.e. if no new
         # faces were found), we return the root node.
@@ -208,10 +235,32 @@ def expand(T, *, roadmap, mesh,
     return T
 
 
+def is_done(T):
+    "Do we know some place to go?"
+    return T.graph['best_node'] != T.root
+
+
 def best_path(T):
     Seen   = NodeDataMap(T, 'seen')
     S      = NodeDataMap(T, 's')
     path   = T.path(T.root, T.graph['best_node'])
     path_s = [S[u] for u in path]
-    T_     = stump(T, path[1]) if len(path) > 1 else T
-    return path_s, Seen[path[-1]], T_
+    return path_s, Seen[path[-1]]
+
+
+@parame.configurable
+def plan_path(*, start, seen, roadmap,
+              num_expand: cfg.param = 10):
+
+    stree = new(start=start, seen=seen)
+
+    for i in range(num_expand):
+
+        log.info('expanding search tree iteration %d', i)
+
+        stree = expand(stree, roadmap=roadmap)
+
+        if is_done(stree):
+            break
+
+    return best_path(stree)

@@ -8,11 +8,13 @@ Su nombre    es Ray tres.
 
 import logging
 import collections
+from os import path, makedirs
 
 import numpy as np
 import trimesh
 
 import parame
+from utils import graph_md5
 
 
 cfg = parame.Module(__name__)
@@ -127,7 +129,7 @@ def visible_between(mesh, r_u, r_v, *, mask=None,
     return mask, dists, num_tested
 
 
-def update_edge_visibility(G, mesh, *, force=False, seen=None):
+def _update_edge_visibility(G, mesh, *, force=False, seen=None):
     """Compute which faces are visible while traversing each edge in G
 
     Parameters
@@ -149,17 +151,21 @@ def update_edge_visibility(G, mesh, *, force=False, seen=None):
     log.info(f'computing sensor visibility over {num_edges} edges')
 
     # All visible faces. Useful to determine % explored.
-    vis_faces   = np.zeros(N, dtype=bool)
+    if 'vis_faces' not in G.graph:
+        vis_faces = np.zeros(N, dtype=bool)
+    else:
+        vis_faces = G.graph['vis_faces']
 
     # Covisibility matrix. If M[i, j] != 0, then i is visible with j.
     # 
-    # We store it a 32-bit integer matrix since it is used in a matrix
-    # multiplication to compute covisibility degree, where it has to be a
-    # 32-bit integer datatype. It could be converted on use, but this is very
-    # costly in time and memory, so we just store it as a 32-bit integer matrix
-    # here.
-    covis_faces = np.zeros((N, N), dtype=np.uint32)
+    # We store it as a 64-bit integer matrix since it is used in a matrix
+    # multiplication to compute covisibility degree, where it has to be.
+    if 'covis_faces' not in G.graph:
+        covis_faces = np.zeros((N, N), dtype=np.uint32)
+    else:
+        covis_faces = G.graph['covis_faces']
 
+    # For printing statistics
     num_tested_sum = 0
     num_faces_sum  = 0
 
@@ -171,12 +177,12 @@ def update_edge_visibility(G, mesh, *, force=False, seen=None):
         r_u = G.nodes[u]['r']
         r_v = G.nodes[v]['r']
 
-        vis_uv, dists, num_tested = visible_between(mesh, r_u, r_v, mask=mask)
+        vis_uv, dists_uv, num_tested = visible_between(mesh, r_u, r_v, mask=mask)
 
-        vis_faces           |= vis_uv
-        covis_faces[vis_uv] |= vis_uv
+        vis_faces            |= vis_uv
+        covis_faces[vis_uv]  |= vis_uv
         data_uv['vis_faces']  = vis_uv
-        data_uv['dist_faces'] = dists
+        data_uv['dist_faces'] = dists_uv
 
         num_tested_sum += num_tested
         num_faces_sum  += np.count_nonzero(vis_uv)
@@ -188,8 +194,46 @@ def update_edge_visibility(G, mesh, *, force=False, seen=None):
             num_tested_sum = 0
             num_faces_sum  = 0
 
-    G.graph['vis_faces'] = np.any([vis_uv for u, v, vis_uv in G.edges.data('vis_faces')], axis=0)
+    G.graph['vis_faces']   = vis_faces
     G.graph['covis_faces'] = covis_faces
+    G.graph['area_faces']  = mesh.area_faces
+
+
+def update_edge_visibility(G, mesh, *, force=False, load_cache=True,
+                           save_cache=True, seen=None, cache_path='runs/cache'):
+    "Caching wrapper for _update_edge_visibility"
+
+    cache_file = path.join(cache_path, f'edge_vis_{graph_md5(G)}_{mesh.md5()}.npz')
+
+    if load_cache and path.exists(cache_file):
+        log.info('loading edge visibility from cache at %s', cache_file)
+        try:
+            d = np.load(cache_file, allow_pickle=True)
+            for uv, vis_uv, dists_uv in zip(d['edges'], d['vis_faces_edges'], d['dist_faces_edges']):
+                G.edges[uv]['vis_faces']  = vis_uv
+                G.edges[uv]['dist_faces'] = dists_uv
+            G.graph['vis_faces']   = d['vis_faces']
+            G.graph['covis_faces'] = d['covis_faces']
+            G.graph['area_faces']  = mesh.area_faces
+        except Exception as e:
+            log.exception('failed loading cached edge visibility: %s', e)
+        else:
+            return
+
+    _update_edge_visibility(G, mesh, force=force, seen=seen)
+
+    if save_cache:
+        log.info('saving edge visibility to %s', cache_file)
+        edges = np.array(G.edges, dtype=object)
+        vis_faces_edges  = np.array([G.edges[uv]['vis_faces']  for uv in edges])
+        dist_faces_edges = np.array([G.edges[uv]['dist_faces'] for uv in edges])
+        makedirs(path.dirname(cache_file), exist_ok=True)
+        d = dict(edges=edges,
+                 vis_faces_edges=vis_faces_edges,
+                 dist_faces_edges=dist_faces_edges,
+                 vis_faces=G.graph['vis_faces'],
+                 covis_faces=G.graph['covis_faces'])
+        np.savez_compressed(cache_file, **d)
 
 
 def update_vertex_visibility(G, mesh, *, root=None, seen=None):

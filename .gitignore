@@ -1,3 +1,5 @@
 /runs
 /env
+/src/cts.c
+/src/cts.*.so
 *.egg-info

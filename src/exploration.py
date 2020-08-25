@@ -1,15 +1,19 @@
 import logging
-from os import makedirs, getpid, path
+from os import makedirs, getpid, path, environ
+from typing import Any, Optional
 from dataclasses import dataclass
 
+import yaml
 import trimesh
 import numpy as np
 import networkx as nx
 from networkx.utils import pairwise
+from nptyping import NDArray
 
 import gui
 import prm
 import parame
+import prevision
 import tree_search
 from utils import threadable
 
@@ -21,26 +25,22 @@ cfg = parame.Module(__name__)
 @dataclass(frozen=True)
 class State():
     mesh: trimesh.Trimesh
-    position: np.ndarray
-    seen_faces: np.ndarray
+    position: NDArray[(Any, 3)]
+    seen_faces: NDArray[Any, bool]
     roadmap: nx.Graph
-    node: int             = None
-    search_tree: nx.Graph = None
-    trajectory: list      = None
+    node: Any = None
+    trajectory: Optional[list] = None
 
     @classmethod
     @parame.configurable
     def new(cls, *, mesh, octree,
-            start_position: cfg.param = (0, 0, 2)):
-        pos     = np.asarray(start_position, dtype=float)
+            start_position: cfg.param = 'random'):
         seen    = np.zeros(mesh.faces.shape[0], dtype=bool)
-        roadmap = prm.new(mesh=mesh, octree=octree, nodes={'start': pos})
-        return cls(mesh, pos, seen, roadmap, 'start', trajectory=[])
-
-    @property
-    def save_dict(self):
-        return dict(pos=self.position, seen=self.seen_faces,
-                    roadmap=self.roadmap, trajectory=self.trajectory)
+        start   = -1
+        roadmap = prm.new(mesh=mesh, octree=octree, nodes={start: start_position})
+        seen   |= np.all([vis for _, _, vis in roadmap.edges(start, data='vis_faces')], axis=0)
+        pos     = roadmap.nodes[start]['r']
+        return cls(mesh, pos, seen, roadmap, start, trajectory=[pos])
 
     @property
     def distance(self):
@@ -54,6 +54,13 @@ class State():
         seen       = self.seen_faces
         area_faces = self.mesh.area_faces
         return np.sum(area_faces[seen]) / np.sum(area_faces[visible])
+
+    save_attrs = {'position', 'seen_faces', 'trajectory',
+                  'distance', 'completion'}
+
+    @property
+    def save_dict(self):
+        return {attr: getattr(self, attr) for attr in self.save_attrs}
 
     def update_gui(self):
         visible = self.roadmap.graph['vis_faces']
@@ -72,7 +79,6 @@ def step(state):
     roadmap = state.roadmap
     node    = state.node
     traj    = state.trajectory
-    stree   = state.search_tree
 
     #if len(roadmap) < 2:
     #    rrt.extend(roadmap, octree=octree, bbox=bbox)
@@ -88,14 +94,15 @@ def step(state):
     roadmap_ = roadmap.copy()
     del roadmap
 
-    prm.update_skips(roadmap_, seen=seen, keep={node})
-    gui.update_roadmap(roadmap_)
+    prm.update_jumps(roadmap_, seen=seen, active={node})
+
+    roadmap_local = prevision.subgraph(roadmap_, mesh=mesh, seen_faces=seen, seen_states=traj)
+
+    gui.update_roadmap(roadmap_local)
     gui.wait_draw()
 
-    #if stree is None:
-    stree = tree_search.new(start=node, seen=seen)
-    stree = tree_search.expand(stree, roadmap=roadmap_, mesh=mesh)
-    path, vis_path, stree_ = tree_search.best_path(stree)
+    path, vis_path = tree_search.plan_path(start=node, seen=seen,
+                                           roadmap=roadmap_local)
 
     if len(path) > 1:
         log.info('chose path: %s', path)
@@ -129,13 +136,17 @@ def step(state):
                    position=pos_,
                    seen_faces=seen_,
                    roadmap=roadmap_,
-                   search_tree=stree_,
                    node=node_,
                    trajectory=traj_)
 
     state_.update_gui()
-    gui.hilight_roadmap_edges(roadmap_, pairwise(path))
-    gui.hilight_vis_faces(vis_path & ~seen_)
+    gui.update_roadmap(roadmap_local)
+    gui.hilight_roadmap_edges(roadmap_local, pairwise(path))
+    gui.update_vis_faces(visible=roadmap_.graph['vis_faces'],
+                         aware=roadmap_local.graph['vis_faces'],
+                         seen=seen_,
+                         hilight=vis_path & ~seen_)
+    gui.activate_layer('visible')
 
     log.info('new state %s: %s', node_, pos_)
     log.info('explored %.2f%% of visible faces', 100*state_.completion)
@@ -154,7 +165,15 @@ def output_path(*args, create=True,
 @threadable
 @parame.configurable
 def run(*, octree, mesh, state=None,
-        num_steps: cfg.param = 2000):
+        num_steps:       cfg.param = 2000,
+        close_on_finish: cfg.param = True):
+
+    with open(output_path('environ.yaml'), 'w') as f:
+        yaml.dump({'environ': dict(environ), 'parame': parame._file_cfg}, stream=f)
+        #f.write('Environment:\n')
+        #f.write(''.join(f'{k}: {v}\n' for k, v in environ.items()))
+        #f.write('parame file configuration:\n')
+        #f.write(''.join(f'{k}: {v}\n' for k, v in parame._file_cfg))
 
     for i in range(num_steps):
 
@@ -167,15 +186,18 @@ def run(*, octree, mesh, state=None,
 
         gui.show_message(f'Iteration {i} completed.\n'
                          f'{100*state.completion:.2f}% explored.\n'
-                         f'Travelled {state.distance:.2f} meters.',
+                         f'Travelled {state.distance:.2f} meters.\n'
+                         f'{len(state.roadmap.edges())} edges in roadmap.',
                          key='status', duration=np.inf)
         gui.save_screenshot(output_path(f'step{i:05d}.png'))
-
         np.savez(output_path(f'state{i:05d}.npz'), **state.save_dict)
 
-        if 99.9/100 < state.completion:
+        if 99.8/100 < state.completion:
             log.info('exploration complete')
             break
+
+    if close_on_finish:
+        gui.close()
 
 
 thread = run.thread

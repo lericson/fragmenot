@@ -41,7 +41,7 @@ class Module():
     def __getitem__(self, name):
         envvar = format_envvar(self.name, name)
         if envvar in os.environ:
-            return eval(os.environ[envvar])
+            return yaml.safe_load(os.environ[envvar])
         if name in self.file_config:
             return self.file_config[name]
         raise KeyError(name)
@@ -49,12 +49,13 @@ class Module():
     def get(self, name, default):
         envvar = format_envvar(self.name, name)
         if envvar in os.environ:
-            return eval(os.environ[envvar])
+            return yaml.safe_load(os.environ[envvar])
         return self.file_config.get(name, default)
 
 
 def configurable(f):
     sig = signature(f)
+    f.cfg = {}
     for name, fparam in sig.parameters.items():
         if isinstance(fparam.annotation, Param):
             par = fparam.annotation
@@ -79,8 +80,11 @@ _file_cfg.update(_load_file_cfg())
 
 @configurable
 def set_profile(*, profile: cfg.param = 'default'):
-    for modname, d in cfg.get(profile, {}).items():
-        _file_cfg.setdefault(modname, {}).update(d)
+    if isinstance(profile, str):
+        profile = [profile]
+    for prof in profile:
+        for modname, d in cfg.get(prof, {}).items():
+            _file_cfg.setdefault(modname, {}).update(d)
 
 
 set_profile()
