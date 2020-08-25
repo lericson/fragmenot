@@ -1,25 +1,22 @@
-import logging
+# distutils: language=c++
 
+embree_version = RTC_VERSION_MAJOR, RTC_VERSION_MINOR, RTC_VERSION_PATCH
 
-log = logging.getLogger('pyembree')
+error_code_desc = {
+    RTC_ERROR_NONE:              "No error",
+    RTC_ERROR_UNKNOWN:           "Unknown error",
+    RTC_ERROR_INVALID_ARGUMENT:  "Invalid argument",
+    RTC_ERROR_INVALID_OPERATION: "Invalid operation",
+    RTC_ERROR_OUT_OF_MEMORY:     "Out of memory",
+    RTC_ERROR_UNSUPPORTED_CPU:   "Unsupported CPU",
+    RTC_ERROR_CANCELLED:         "Cancelled"
+}
 
-cdef void print_error(RTCError code):
-    if code == RTC_NO_ERROR:
-        log.error("ERROR: No error")
-    elif code == RTC_UNKNOWN_ERROR:
-        log.error("ERROR: Unknown error")
-    elif code == RTC_INVALID_ARGUMENT:
-        log.error("ERROR: Invalid argument")
-    elif code == RTC_INVALID_OPERATION:
-        log.error("ERROR: Invalid operation")
-    elif code == RTC_OUT_OF_MEMORY:
-        log.error("ERROR: Out of memory")
-    elif code == RTC_UNSUPPORTED_CPU:
-        log.error("ERROR: Unsupported CPU")
-    elif code == RTC_CANCELLED:
-        log.error("ERROR: Cancelled")
+cdef str rtcErrorString(RTCError code):
+    if code in error_code_desc:
+        return error_code_desc[code]
     else:
-        raise RuntimeError
+        return "Unknown error code " + str(code)
 
 
 cdef class EmbreeDevice:
@@ -27,9 +24,9 @@ cdef class EmbreeDevice:
         self.device = rtcNewDevice(NULL)
 
     def __dealloc__(self):
-        rtcDeleteDevice(self.device)
+        rtcReleaseDevice(self.device)
 
     def __repr__(self):
-        return 'Embree version:  {0}.{1}.{2}'.format(RTCORE_VERSION_MAJOR,
-                                                     RTCORE_VERSION_MINOR,
-                                                     RTCORE_VERSION_PATCH)
+        return 'Embree version: {0}.{1}.{2}'.format(RTC_VERSION_MAJOR,
+                                                    RTC_VERSION_MINOR,
+                                                    RTC_VERSION_PATCH)

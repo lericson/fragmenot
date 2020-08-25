@@ -4,22 +4,31 @@ cimport cython
 cimport numpy as np
 cimport rtcore as rtc
 cimport rtcore_ray as rtcr
+from rtcore_ray cimport RTCRayHit, RTCRayHit4, RTCRayHit8, RTCRayHit16, RTCRay, RTCRay4, RTCRay8, RTCRay16
 
-cdef extern from "embree2/rtcore_scene.h":
+cdef extern from "embree3/rtcore_scene.h":
 
-    ctypedef struct RTCRay
-    ctypedef struct RTCRay4
-    ctypedef struct RTCRay8
-    ctypedef struct RTCRay16
+
+    cdef struct RTCIntersectContext:
+        int flags
+        void *filter
+        unsigned int instID
+        float distanceFac
+
+    cdef int RTC_INVALID_GEOMETRY_ID
 
     cdef enum RTCSceneFlags:
-        RTC_SCENE_STATIC
-        RTC_SCENE_DYNAMIC
-        RTC_SCENE_COMPACT
-        RTC_SCENE_COHERENT
-        RTC_SCENE_INCOHERENT
-        RTC_SCENE_HIGH_QUALITY
-        RTC_SCENE_ROBUST
+        RTC_SCENE_FLAG_NONE
+        RTC_SCENE_FLAG_DYNAMIC
+        RTC_SCENE_FLAG_COMPACT
+        RTC_SCENE_FLAG_ROBUST
+        #RTC_SCENE_FLAG_CONTEXT_FILTER_FUNCTION
+
+    cdef enum RTCBuildQuality:
+        RTC_BUILD_QUALITY_LOW
+        RTC_BUILD_QUALITY_MEDIUM
+        RTC_BUILD_QUALITY_HIGH
+        RTC_BUILD_QUALITY_REFIT
 
     cdef enum RTCAlgorithmFlags:
         RTC_INTERSECT1
@@ -30,35 +39,28 @@ cdef extern from "embree2/rtcore_scene.h":
     # ctypedef void* RTCDevice
     ctypedef void* RTCScene
 
-    RTCScene rtcNewScene(RTCSceneFlags flags, RTCAlgorithmFlags aflags)
+    RTCScene rtcNewScene(rtc.RTCDevice device) nogil
 
-    RTCScene rtcDeviceNewScene(rtc.RTCDevice device, RTCSceneFlags flags, RTCAlgorithmFlags aflags)
+    rtc.RTCDevice rtcGetSceneDevice(RTCScene scene) nogil
 
-    ctypedef bint (*RTCProgressMonitorFunc)(void* ptr, const double n)
+    void rtcSetSceneFlags(RTCScene scene, RTCSceneFlags flags) nogil
+    void rtcCommitScene(RTCScene scene) nogil
 
-    void rtcSetProgressMonitorFunction(RTCScene scene, RTCProgressMonitorFunc func, void* ptr)
+    void rtcCommitThread(RTCScene scene, unsigned int threadID, unsigned int numThreads) nogil
 
-    void rtcCommit(RTCScene scene)
+    void rtcInitIntersectContext(RTCIntersectContext* context) nogil
 
-    void rtcCommitThread(RTCScene scene, unsigned int threadID, unsigned int numThreads)
+    void rtcIntersect1(                    RTCScene scene, RTCIntersectContext* context, RTCRayHit*   rayhit) nogil
+    void rtcIntersect4( const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRayHit4*  rayhit) nogil
+    void rtcIntersect8( const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRayHit8*  rayhit) nogil
+    void rtcIntersect16(const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRayHit16* rayhit) nogil
 
-    void rtcIntersect(RTCScene scene, RTCRay& ray)
+    void rtcOccluded1(                    RTCScene scene, RTCIntersectContext* context, RTCRay*   rayhit) nogil
+    void rtcOccluded4( const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRay4*  rayhit) nogil
+    void rtcOccluded8( const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRay8*  rayhit) nogil
+    void rtcOccluded16(const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRay16* rayhit) nogil
 
-    void rtcIntersect4(const void* valid, RTCScene scene, RTCRay4& ray)
-
-    void rtcIntersect8(const void* valid, RTCScene scene, RTCRay8& ray)
-
-    void rtcIntersect16(const void* valid, RTCScene scene, RTCRay16& ray)
-
-    void rtcOccluded(RTCScene scene, RTCRay& ray)
-
-    void rtcOccluded4(const void* valid, RTCScene scene, RTCRay4& ray)
-
-    void rtcOccluded8(const void* valid, RTCScene scene, RTCRay8& ray)
-
-    void rtcOccluded16(const void* valid, RTCScene scene, RTCRay16& ray)
-
-    void rtcDeleteScene(RTCScene scene)
+    void rtcReleaseScene(RTCScene scene) nogil
 
 cdef class EmbreeScene:
     cdef RTCScene scene_i

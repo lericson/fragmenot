@@ -3,7 +3,6 @@ cimport rtcore as rtc
 cimport rtcore_ray as rtcr
 cimport rtcore_scene as rtcs
 cimport rtcore_geometry as rtcg
-cimport rtcore_geometry_user as rtcgu
 from rtcore cimport Vertex, Triangle, Vec3f
 from libc.stdlib cimport malloc, free
 
@@ -15,9 +14,12 @@ def run_triangles():
     pass
 
 cdef unsigned int addCube(rtcs.RTCScene scene_i):
-    cdef unsigned int mesh = rtcg.rtcNewTriangleMesh(scene_i,
-                rtcg.RTC_GEOMETRY_STATIC, 12, 8, 1)
-    cdef Vertex* vertices = <Vertex*> rtcg.rtcMapBuffer(scene_i, mesh, rtcg.RTC_VERTEX_BUFFER)
+
+    cdef rtcg.RTCGeometry geom = rtcg.rtcNewGeometry(rtcs.rtcGetSceneDevice(scene_i), rtcg.RTC_GEOMETRY_TYPE_TRIANGLE)
+    cdef unsigned int geomID = rtcg.rtcAttachGeometry(scene_i, geom)
+
+    cdef Vertex* vertices = <Vertex*> rtcg.rtcSetNewGeometryBuffer(geom, rtcg.RTC_BUFFER_TYPE_VERTEX, 0, rtcg.RTC_FORMAT_FLOAT3, 4*sizeof(float), 8)
+
     vertices[0].x = -1
     vertices[0].y = -1
     vertices[0].z = -1
@@ -50,13 +52,11 @@ cdef unsigned int addCube(rtcs.RTCScene scene_i):
     vertices[7].y = +1
     vertices[7].z = +1
 
-    rtcg.rtcUnmapBuffer(scene_i, mesh, rtcg.RTC_VERTEX_BUFFER)
-
     cdef Vec3f *colors = <Vec3f*> malloc(12*sizeof(Vec3f))
 
     cdef int tri = 0
-    cdef Triangle* triangles = <Triangle*> rtcg.rtcMapBuffer(scene_i, mesh,
-                rtcg.RTC_INDEX_BUFFER)
+
+    cdef Triangle* triangles = <Triangle*> rtcg.rtcSetNewGeometryBuffer(geom, rtcg.RTC_BUFFER_TYPE_INDEX, 0, rtcg.RTC_FORMAT_UINT3, 3*sizeof(int), 12)
 
     # left side
     colors[tri].x = 1.0
@@ -154,15 +154,16 @@ cdef unsigned int addCube(rtcs.RTCScene scene_i):
     triangles[tri].v2 = 5
     tri += 1
 
-    rtcg.rtcUnmapBuffer(scene_i, mesh, rtcg.RTC_INDEX_BUFFER)
+    rtcg.rtcCommitGeometry(geom)
+    rtcg.rtcReleaseGeometry(geom)
 
-    return mesh
+    return geomID
 
 cdef unsigned int addGroundPlane (rtcs.RTCScene scene_i):
-    cdef unsigned int mesh = rtcg.rtcNewTriangleMesh (scene_i,
-            rtcg.RTC_GEOMETRY_STATIC, 2, 4, 1)
+    cdef rtcg.RTCGeometry geom = rtcg.rtcNewGeometry(rtcs.rtcGetSceneDevice(scene_i), rtcg.RTC_GEOMETRY_TYPE_TRIANGLE)
+    cdef unsigned int geomID = rtcg.rtcAttachGeometry(scene_i, geom)
 
-    cdef Vertex* vertices = <Vertex*> rtcg.rtcMapBuffer(scene_i, mesh, rtcg.RTC_VERTEX_BUFFER)
+    cdef Vertex* vertices = <Vertex*> rtcg.rtcSetNewGeometryBuffer(geom, rtcg.RTC_BUFFER_TYPE_VERTEX, 0, rtcg.RTC_FORMAT_FLOAT3, 4*sizeof(float), 4)
     vertices[0].x = -10
     vertices[0].y = -2
     vertices[0].z = -10
@@ -178,15 +179,16 @@ cdef unsigned int addGroundPlane (rtcs.RTCScene scene_i):
     vertices[3].x = +10
     vertices[3].y = -2
     vertices[3].z = +10
-    rtcg.rtcUnmapBuffer(scene_i, mesh, rtcg.RTC_VERTEX_BUFFER)
 
-    cdef Triangle* triangles = <Triangle*> rtcg.rtcMapBuffer(scene_i, mesh, rtcg.RTC_INDEX_BUFFER)
+    cdef Triangle* triangles = <Triangle*> rtcg.rtcSetNewGeometryBuffer(geom, rtcg.RTC_BUFFER_TYPE_INDEX, 0, rtcg.RTC_FORMAT_UINT3, 3*sizeof(int), 2)
     triangles[0].v0 = 0
     triangles[0].v1 = 2
     triangles[0].v2 = 1
     triangles[1].v0 = 1
     triangles[1].v1 = 2
     triangles[1].v2 = 3
-    rtcg.rtcUnmapBuffer(scene_i, mesh, rtcg.RTC_INDEX_BUFFER)
 
-    return mesh
+    rtcg.rtcCommitGeometry(geom)
+    rtcg.rtcReleaseGeometry(geom)
+
+    return geomID
