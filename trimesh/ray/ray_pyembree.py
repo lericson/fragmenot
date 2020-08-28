@@ -248,7 +248,7 @@ class RayMeshIntersector(object):
     @log_time
     def intersects_first(self,
                          ray_origins,
-                         ray_directions):
+                         ray_directions, dists=None):
         """
         Find the index of the first triangle a ray hits.
 
@@ -259,6 +259,8 @@ class RayMeshIntersector(object):
           Origins of rays
         ray_directions : (n, 3) float
           Direction (vector) of rays
+        dists : float or (n,) float
+          Maximum distance for each ray
 
         Returns
         ----------
@@ -266,7 +268,7 @@ class RayMeshIntersector(object):
           Index of triangle ray hit, or -1 if not hit
         """
 
-        ray_origins = np.asanyarray(deepcopy(ray_origins))
+        ray_origins = np.asanyarray(ray_origins)
         ray_directions = np.asanyarray(ray_directions)
 
         triangle_index = self._scene.run(ray_origins,
@@ -337,10 +339,13 @@ class _EmbreeWrap(object):
             vertices=scaled.astype(_embree_dtype),
             indices=faces.view(np.ndarray).astype(np.int32))
 
-    def run(self, origins, normals, **kwargs):
+    def run(self, origins, normals, dists=None, **kwargs):
         scaled = (np.array(origins,
                            dtype=np.float64) - self.origin) * self.scale
 
+        if dists is not None:
+            dists = self.scale * dists
+
         return self.scene.run(scaled.astype(_embree_dtype),
                               normals.astype(_embree_dtype),
-                              **kwargs)
+                              dists=dists, **kwargs)
