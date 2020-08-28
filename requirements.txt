@@ -1,5 +1,5 @@
 -e git+file://${PWD}@98a067e97cb10b0ff3d1eaf5624d9acdf9ec37a1#egg=octomap_python
--e git+file://${PWD}@7d04ec6e58d3a632a8cd1bce12c2b93b01f067eb#egg=trimesh
+-e git+file://${PWD}@dbfc08c8a34108f3fa5d9e22a5797e14ff52b3f8#egg=trimesh
 -e git+file://${PWD}@3606747d0177a71b243ff282f1e54dbbfc5246c6#egg=pyembree
 autoprop==1.0.1
 cycler==0.10.0

@@ -16,8 +16,9 @@ Install dependencies (Ubuntu)
 
     apt-get install libspatialindex-dev
     [You need to download, compile and install embree v2.x.]
-    ./env/bin/pip install -r requirements.txt -e .
+    ./env/bin/pip install -r requirements.txt
 
 Run the demo:
 
+    ./env/bin/python3 setup.py develop
     ./env/bin/python3 src/__main__.py
