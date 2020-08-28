@@ -1,6 +1,6 @@
 -e git+file://${PWD}@98a067e97cb10b0ff3d1eaf5624d9acdf9ec37a1#egg=octomap_python
 -e git+file://${PWD}@7d04ec6e58d3a632a8cd1bce12c2b93b01f067eb#egg=trimesh
--e git+file://${PWD}@38957e64d9c58222ca20f965c6617b9df98fa834#egg=pyembree
+-e git+file://${PWD}@699e2380d0e4a096d7791b66a3b1e38aa33a7d97#egg=pyembree
 autoprop==1.0.1
 cycler==0.10.0
 Cython==0.29.20
