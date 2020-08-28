@@ -15,7 +15,7 @@ Create a virtualenv:
 Install dependencies (Ubuntu)
 
     apt-get install libspatialindex-dev
-    [You need to download, compile and install embree v2.x.]
+    [You need embree 3.x.]
     ./env/bin/pip install -r requirements.txt
 
 Run the demo:
