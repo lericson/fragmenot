@@ -26,15 +26,9 @@ log = logging.getLogger(__name__)
 cfg = parame.Module(__name__)
 
 
-# Label maker. The advantage of doing this is that we can never have a bug
-# where a new node gets assigned an already existing node label. We might run
-# out of node labels though, and they may get pretty long.
-next_label = iter(range(sys.maxsize)).__next__
-
-
 def new(*, start, seen):
     "Create a new search tree from given *start* and *seen* faces."
-    r = next_label()
+    r = 0
     T = Tree()
     T.root = r
     T.add_node(r)
@@ -84,6 +78,7 @@ def expand(T, *, roadmap,
            max_depth: cfg.param = 50,
            steps:     cfg.param = 15000,
            max_size:  cfg.param = 2.00,
+           alpha:     cfg.param = 1e-1,
            lam:       cfg.param = 50e-2,
            K:         cfg.param = 1e3):
 
@@ -91,7 +86,7 @@ def expand(T, *, roadmap,
         max_size = int(steps*max_size)
 
     return cts.expand(T, roadmap=roadmap, max_depth=max_depth, steps=steps,
-                      max_size=max_size, lam=lam, K=K)
+                      max_size=max_size, alpha=alpha, lam=lam, K=K)
 
 
 def is_done(T):
@@ -100,11 +95,9 @@ def is_done(T):
 
 
 def best_path(T):
-    Seen   = NodeDataMap(T, 'seen')
-    S      = NodeDataMap(T, 's')
     path   = T.path(T.root, T.graph['best_node'])
-    path_s = [S[u] for u in path]
-    return path_s, Seen[path[-1]]
+    path_s = [T.S[u] for u in path]
+    return path_s, T.Seen[path[-1]]
 
 
 @parame.configurable

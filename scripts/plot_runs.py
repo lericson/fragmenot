@@ -119,10 +119,11 @@ for i, d in enumerate(sorted(Ds)):
     F_X     = [f(X) for f in F]
     mu_X    = np.mean(F_X, axis=0)
     sigma_X = np.std(F_X, axis=0)
-    if False:
-        plt.fill_between(X, mu_X - sigma_X, mu_X + sigma_X, color=f'C{i}', alpha=0.4)
+    if True:
+        #plt.fill_between(X, mu_X - sigma_X, mu_X + sigma_X, color=f'C{i}', alpha=0.4)
         plt.plot(X, mu_X, color=f'C{i}', alpha=1.0, label=f'$d={d:.2f}, N={len(Ds[d])}$')
-    plt.polar(2*np.pi*X, mu_X, label=f'$d={d:.2f}, N={len(Ds[d])}$')
+    else:
+        plt.polar(2*np.pi*X, mu_X, label=f'$d={d:.2f}, N={len(Ds[d])}$')
     #for j, ds in enumerate(Ds[d]):
     #    label = ds.label if j == 0 else None
     #    #plt.plot(FX[j], X, label=label, color=f'C{i}')

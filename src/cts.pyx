@@ -1,10 +1,13 @@
-#cython: language_level=3
+# distutils: language = c++
+# cython: language_level = 3
 "Plan a path for exploration in a state graph"
 
 import sys
 cimport cython
 import logging
 from libc.math cimport exp
+from libcpp.vector cimport vector
+from libcpp.map cimport map as hashmap
 
 import numpy as np
 from networkx.utils import pairwise
@@ -15,6 +18,7 @@ import gui
 log = logging.getLogger(__name__)
 
 
+"""
 # Label maker. The advantage of doing this is that we can never have a bug
 # where a new node gets assigned an already existing node label. We might run
 # out of node labels though, and they may get pretty long.
@@ -23,6 +27,7 @@ cdef inline int next_label() nogil:
     global _label
     _label += 1
     return _label
+"""
 
 
 def statstr(a):
@@ -122,18 +127,20 @@ cdef class NodeDataMap():
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef bint recurred(NodeDataMap Score, list path, list path_s, int state, double score):
+cdef bint recurred(double [::1] Score, list path, list path_s, int state, double score):
     cdef int i
     for i in range(len(path) - 1):
-        if path_s[i] == state and score <= Score[path[i]]:
+        if path_s[i] == state and score <= Score[<int>path[i]]:
             return True
     return False
 
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef double _propagate(double [::1] face_score,
                        unsigned char [::1] seen_u,
                        unsigned char [::1] vis_uv,
-                       unsigned char [::1] seen_v):
+                       unsigned char [::1] seen_v) nogil:
     "Compute seen_v, gain_v"
     cdef Py_ssize_t k = face_score.shape[0]
     cdef double gain_v = 0.0
@@ -150,6 +157,7 @@ def expand(object T, *, object roadmap,
            int    max_depth,
            int    steps,
            int    max_size,
+           double alpha,
            double lam,
            double K):
 
@@ -158,16 +166,37 @@ def expand(object T, *, object roadmap,
     cdef EdgeDataMap D          = EdgeDataMap(G, 'd')
     cdef EdgeDataMap Vis_faces  = EdgeDataMap(G, 'vis_faces')
 
-    cdef NodeDataMap S          = NodeDataMap(T, 's')
-    cdef NodeDataMap Seen       = NodeDataMap(T, 'seen')
-    cdef NodeDataMap Score      = NodeDataMap(T, 'score')
-    cdef NodeDataMap Dist       = NodeDataMap(T, 'dist')
-    cdef NodeDataMap Depth      = NodeDataMap(T, 'depth')
-    cdef NodeDataMap N_child    = NodeDataMap(T, 'n_child')
-    cdef NodeDataMap Unvisited  = NodeDataMap(T, 'unvisited')
+    cdef int step, i, j, u, v, w, s_u, s_v
+    cdef list path, path_s
+    cdef vector[int]* unvisited_u
+    cdef int root = 0;
+    cdef int N = len(T)
+    cdef int next_label = N
 
-    cdef int step, j, u, v, w, s_u, s_v
-    cdef list unvisited_u, path, path_s
+    assert T.root == root
+
+    cdef    int [::1] S       = np.empty(N + steps, dtype=np.int32)
+    cdef double [::1] Score   = np.empty(N + steps, dtype=np.float64)
+    cdef double [::1] Dist    = np.empty(N + steps, dtype=np.float64)
+    cdef    int [::1] Depth   = np.empty(N + steps, dtype=np.int32)
+    cdef    int [::1] N_child = np.empty(N + steps, dtype=np.int32)
+    #cdef NodeDataMap Score      = NodeDataMap(T, 'score')
+    #cdef NodeDataMap Dist       = NodeDataMap(T, 'dist')
+    #cdef NodeDataMap Depth      = NodeDataMap(T, 'depth')
+    #cdef NodeDataMap N_child    = NodeDataMap(T, 'n_child')
+    #cdef dict Unvisited = {}
+    cdef dict Seen      = {}
+
+    cdef hashmap[int, vector[int]] Unvisited
+
+    for i in range(N):
+        dd         = T.nodes[i]
+        S[i]       = dd['s']
+        Seen[i]    = dd['seen']
+        Score[i]   = dd['score']
+        Dist[i]    = dd['dist']
+        Depth[i]   = dd['depth']
+        N_child[i] = dd['n_child']
 
     log.info('computing weights')
 
@@ -175,7 +204,7 @@ def expand(object T, *, object roadmap,
     face_covis = roadmap.graph['covis_faces']
     face_area  = roadmap.graph['area_faces']
 
-    vis_unseen = face_vis & ~Seen[T.root]
+    vis_unseen = face_vis & ~Seen[root]
 
     # Compute face covisibility area, excluding seen faces. We do this at a
     # smaller length scale because of integer mathematics. Do not change to
@@ -186,13 +215,12 @@ def expand(object T, *, object roadmap,
     #for (i,) in zip(*np.nonzero(face_vis)):
     #    assert (face_degree[i] == np.dot(face_covis[i], vis_unseen)), f'{i}: {face_degree[i]}'
 
-    # A 64-bit float has a minimum exponent of 2^-1023 ~ 1e-308. Scale the face
-    # degree accordingly.
-    face_score = K*np.exp((-1e-1*face_degree).clip(-200, 0))
+    # Clip to 300 as a 64-bit float has a minimum exponent of 2^-1023 ~ 1e-308.
+    face_score = K*np.exp(-alpha*(face_degree.clip(0, 200)))
     #face_score[face_degree < min_faces] = 1e-16
-    face_score[~vis_unseen]             = 1e-16
+    face_score[~vis_unseen]             = K
 
-    gui.update_face_hsv(hues=0.8*(1 - np.log(face_score/K)/-100), layer='score')
+    gui.update_face_hsv(hues=0.8*(1 - (-np.log(face_score/K)/alpha)/200), layer='score')
     #gui.update_face_hsv(hues=0.8/face_degree.max()*face_degree)
 
     log.info('  face_area: %s', statstr(face_area[vis_unseen]))
@@ -209,7 +237,8 @@ def expand(object T, *, object roadmap,
     cdef dict Tadj = T._adj
     cdef object N_child_get = N_child.__getitem__
     cdef double score_u, score_v, gain_v, distfac_v, dist_u, dist_v
-    cdef double dist_root = Dist[T.root]
+    cdef double dist_root = Dist[root]
+    cdef double [::1] face_score_vw = face_score;
 
     cdef int n_recurred = 0, n_inserted = 0
 
@@ -218,7 +247,7 @@ def expand(object T, *, object roadmap,
         ## SELECTION: find an unexplored branching point in the tree. Result is
         ## the chosen next state S[v], and its path.
 
-        path, u = [], T.root
+        path, u = [], root
         path_s = []
 
         # This loop generates a path = [..., u], and a successor state s_v of
@@ -229,20 +258,23 @@ def expand(object T, *, object roadmap,
             path.append(u)
             path_s.append(s_u)
 
-            if u not in Unvisited:
-                unvisited_u = Unvisited[u] = list(Gadj[s_u])
+            #if u not in Unvisited:
+            if Unvisited.find(u) == Unvisited.end():
+                Unvisited[u] = list(Gadj[s_u])
+                unvisited_u = &Unvisited[u]
             else:
-                unvisited_u = Unvisited[u]
+                unvisited_u = &Unvisited[u]
 
-            if unvisited_u:
+            if not unvisited_u.empty():
                 # The tree node has unvisited neighboring states, let s_v be
                 # one of them.
-                s_v = unvisited_u.pop()
+                s_v = unvisited_u.back()
+                unvisited_u.pop_back()
                 break
 
             nbrs = list(Tadj[u])
             if not nbrs:
-                #raise RuntimeError('node is leaf and no neighbor states')
+                raise RuntimeError('node is leaf and no neighbor states')
                 v = u
                 u = path[-1]
                 s_v = S[v]
@@ -264,12 +296,14 @@ def expand(object T, *, object roadmap,
         n_inserted += 1
 
         # EXPANSION: add new node to search tree
-        v = next_label()
-        T.add_node(v, s=s_v)
+        v = next_label
+        next_label += 1
+        S[v] = s_v
+        T.add_node(v)
         T.add_edge(u, v)
 
         seen_v  = np.empty(face_score.shape, dtype=bool)
-        gain_v  = _propagate(face_score, Seen[u], Vis_faces[s_u, s_v], seen_v)
+        gain_v  = _propagate(face_score_vw, Seen[u], Vis_faces[s_u, s_v], seen_v)
         Seen[v] = seen_v
 
         dist_u = Dist[u]
@@ -292,23 +326,23 @@ def expand(object T, *, object roadmap,
         for w in path:
             N_child[w] = <int>N_child[w] + 1
 
-        if N_child[T.root] >= max_size:
+        if N_child[root] >= max_size:
             break
 
         if step == 0 or ((step+1) % (steps//6)) == 0:
-            best_path   = T.path(T.root, best_node)
+            best_path   = T.path(root, best_node)
             best_path_s = [S[u] for u in best_path]
-            log.debug(f'{N_child[T.root]:5d} rollouts in {len(T):5d} nodes, score: {Score[best_node]:.5g}')
+            log.debug(f'{N_child[root]:5d} rollouts in {len(T):5d} nodes, score: {Score[best_node]:.5g}')
             gui.hilight_roadmap_edges(G, pairwise(best_path_s))
             gui.wait_draw()
 
-    if not any([np.any(Seen[v] & ~Seen[T.root]) for v in T]):
-        if best_node == T.root:
+    if not any([np.any(Seen[v] & ~Seen[root]) for v in T]):
+        if best_node == root:
             log.warn('did not find any unseen faces')
         else:
             log.warn('did not find any unseen faces (but best node is not root?)')
-            best_node, best_score = T.root, Score[T.root]
-    elif best_node == T.root:
+            best_node, best_score = root, Score[root]
+    elif best_node == root:
         log.warn('best node is root even though other nodes saw new faces')
         #best_node = min(T, key=lambda v: G_dists[S[v]])
         #best_score = scoref(best_node)
@@ -318,11 +352,18 @@ def expand(object T, *, object roadmap,
 
     log.info('run complete, stats follow')
     log.info('inserted %d (%d recurrent paths)', n_inserted, n_recurred)
-    log.info('   dist: %s', statstr(list(Dist.values())))
-    log.info('  depth: %s', statstr(list(Depth.values())))
-    log.info('n_child: %s', statstr(list(N_child.values())))
+    log.info('   dist: %s', statstr(list(Dist)))
+    log.info('  depth: %s', statstr(list(Depth)))
+    log.info('n_child: %s', statstr(list(N_child)))
     log.info(' degree: %s', statstr(list(map(G.degree, G))))
-    log.info('balance: %s', statstr([(N_child[T.parent(v)]+1)/(N_child[v]+1) for v in T if v != T.root]))
-    log.info('  score: %s', statstr(list(Score.values())))
+    log.info('balance: %s', statstr([(N_child[T.parent(v)]+1)/(N_child[v]+1) for v in T if v != root]))
+    log.info('  score: %s', statstr(list(Score)))
+
+    T.S       = S
+    T.Seen    = Seen
+    T.Score   = Score
+    T.Dist    = Dist
+    T.Depth   = Depth
+    T.N_child = N_child
 
     return T
