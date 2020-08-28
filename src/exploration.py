@@ -1,3 +1,4 @@
+import time
 import logging
 from os import makedirs, getpid, path, environ
 from typing import Any, Optional
@@ -15,7 +16,7 @@ import prm
 import parame
 import prevision
 import tree_search
-from utils import threadable
+from utils import threadable, format_duration
 
 
 log = logging.getLogger(__name__)
@@ -62,12 +63,13 @@ class State():
     def save_dict(self):
         return {attr: getattr(self, attr) for attr in self.save_attrs}
 
-    def update_gui(self):
-        visible = self.roadmap.graph['vis_faces']
+    def update_gui(self, *, update_vis_faces=True):
         gui.update_roadmap(self.roadmap)
         gui.update_position(self.position)
         gui.update_trajectory(self.trajectory)
-        gui.update_vis_faces(visible=visible, seen=self.seen_faces)
+        if update_vis_faces:
+            visible = self.roadmap.graph['vis_faces']
+            gui.update_vis_faces(visible=visible, seen=self.seen_faces)
 
 
 @threadable
@@ -104,31 +106,23 @@ def step(state):
     path, vis_path = tree_search.plan_path(start=node, seen=seen,
                                            roadmap=roadmap_local)
 
-    if len(path) > 1:
-        log.info('chose path: %s', path)
+    log.info('chose path: %s', path)
 
-        # node_ is the next node in the chosen path
-        node_ = path[1]
+    # node_ is the next node in the chosen path
+    node_ = path[1]
 
-        # Construct next state (hence the _ suffixes)
-        pos_       = roadmap_.nodes[node_]['r'].copy()
-        seen_      = seen | roadmap_.edges[node, node_]['vis_faces']
-        #seen_      = data_v['vis_faces'].copy()
-        #roadmap_   = rrt.new(pos_) # NOTE should set root d = data_v['d']
-        #roadmap_   = rrt.reroot(roadmap, node_)
-        #roadmap_   = rrt.extract_path(roadmap, path[1:])
-        #roadmap_   = rrt.new(pos_, d=data_v['d']) # NOTE should set root d = data_v['d']
+    # Construct next state (hence the _ suffixes)
+    pos_       = roadmap_.nodes[node_]['r'].copy()
+    seen_      = seen | roadmap_.edges[node, node_]['vis_faces']
+    #seen_      = data_v['vis_faces'].copy()
+    #roadmap_   = rrt.new(pos_) # NOTE should set root d = data_v['d']
+    #roadmap_   = rrt.reroot(roadmap, node_)
+    #roadmap_   = rrt.extract_path(roadmap, path[1:])
+    #roadmap_   = rrt.new(pos_, d=data_v['d']) # NOTE should set root d = data_v['d']
 
-        rs = roadmap_.edges[node, node_]['rs']
-        rs = rs if np.allclose(rs[0], roadmap_.nodes[node]['r']) else rs[::-1]
-        traj_ = traj + rs
-
-    else:
-        log.warn('no path found in planning step, standing still')
-        node_      = node
-        pos_       = pos
-        seen_      = seen
-        traj_      = traj
+    rs = roadmap_.edges[node, node_]['rs']
+    rs = rs if np.allclose(rs[0], roadmap_.nodes[node]['r']) else rs[::-1]
+    traj_ = traj + rs
 
     del node, pos, seen, traj, state
 
@@ -139,14 +133,13 @@ def step(state):
                    node=node_,
                    trajectory=traj_)
 
-    state_.update_gui()
+    state_.update_gui(update_vis_faces=False)
     gui.update_roadmap(roadmap_local)
     gui.hilight_roadmap_edges(roadmap_local, pairwise(path))
     gui.update_vis_faces(visible=roadmap_.graph['vis_faces'],
                          aware=roadmap_local.graph['vis_faces'],
                          seen=seen_,
                          hilight=vis_path & ~seen_)
-    gui.activate_layer('visible')
 
     log.info('new state %s: %s', node_, pos_)
     log.info('explored %.2f%% of visible faces', 100*state_.completion)
@@ -165,17 +158,29 @@ def output_path(*args, create=True,
 @threadable
 @parame.configurable
 def run(*, octree, mesh, state=None,
-        num_steps:       cfg.param = 2000,
-        close_on_finish: cfg.param = True):
+        num_steps:        cfg.param = 1000,
+        percent_complete: cfg.param = 100.0,
+        close_on_finish:  cfg.param = True):
 
     with open(output_path('environ.yaml'), 'w') as f:
-        yaml.dump({'environ': dict(environ), 'parame': parame._file_cfg}, stream=f)
+        yaml.dump(dict(environ=dict(environ), parame=parame._file_cfg), stream=f)
         #f.write('Environment:\n')
         #f.write(''.join(f'{k}: {v}\n' for k, v in environ.items()))
         #f.write('parame file configuration:\n')
         #f.write(''.join(f'{k}: {v}\n' for k, v in parame._file_cfg))
 
+    np.savez_compressed(output_path('mesh.npz'),
+                        faces=mesh.faces,
+                        vertices=mesh.vertices,
+                        area_faces=mesh.area_faces)
+
+    gui.activate_layer('visible')
+
+    t0 = time.time()
+
     for i in range(num_steps):
+
+        log.info('step %d begins', i)
 
         if state is None:
             state = State.new(octree=octree, mesh=mesh)
@@ -184,16 +189,19 @@ def run(*, octree, mesh, state=None,
         else:
             state = step(state)
 
-        gui.show_message(f'Iteration {i} completed.\n'
+        gui.show_message(f'Step {i} completed.\n'
                          f'{100*state.completion:.2f}% explored.\n'
                          f'Travelled {state.distance:.2f} meters.\n'
-                         f'{len(state.roadmap.edges())} edges in roadmap.',
+                         f'{len(state.roadmap.edges())} edges in roadmap.\n'
+                         f'{format_duration(time.time()-t0)} on the clock.',
                          key='status', duration=np.inf)
         gui.save_screenshot(output_path(f'step{i:05d}.png'))
         np.savez(output_path(f'state{i:05d}.npz'), **state.save_dict)
 
-        if 99.8/100 < state.completion:
-            log.info('exploration complete')
+        log.info('step %d ends\n', i)
+
+        if percent_complete/100 < state.completion:
+            log.info('exploration complete!')
             break
 
     if close_on_finish:

@@ -6,6 +6,7 @@ Su nombre    es Ray tres.
 """
 
 
+import time
 import logging
 import collections
 from os import path, makedirs
@@ -13,6 +14,7 @@ from os import path, makedirs
 import numpy as np
 import trimesh
 
+import gui
 import parame
 from utils import graph_md5
 
@@ -22,7 +24,7 @@ log = logging.getLogger(__name__)
 
 
 @parame.configurable
-def visible_between(mesh, r_u, r_v, *, mask=None,
+def visible_between_DEPRECATED(mesh, r_u, r_v, *, mask=None,
                     radius: cfg.param = 2.0,
                     enable_occlusions: cfg.param = True,
                     max_incidence_angle: cfg.param = np.cos(np.radians(90 + 1e-3))):
@@ -82,8 +84,9 @@ def visible_between(mesh, r_u, r_v, *, mask=None,
     ts_clip = np.clip(ts, 0, t1)
 
     # Compute rays, their origin and lengths
-    rays    = R_rel - ts_clip*n
-    origins = r_u + ts_clip*n
+    ts_clip_n = ts_clip*n
+    rays    = R_rel - ts_clip_n
+    origins = r_u + ts_clip_n
     dists   = np.linalg.norm(rays, axis=1)
 
     # Mask set of points close enough to the sensor _anywhere on the line_
@@ -98,6 +101,7 @@ def visible_between(mesh, r_u, r_v, *, mask=None,
     mask &= (0 < ts_)
     mask &= (ts_ < 1.0) 
 
+    """
     # Compute cosine of the ray incidence angle by the identity
     #   dot(a, b) = |a|*|b|*cos(theta) <=> cos(theta) = dot(a,b)/|a|/|b|
     # We already have norms for the rays, and the normals have unit length.
@@ -105,6 +109,7 @@ def visible_between(mesh, r_u, r_v, *, mask=None,
 
     # Mask faces inside maximum incidence angle
     mask &= (ray_face_cos < max_incidence_angle)
+    """
 
     num_tested = np.count_nonzero(mask)
 
@@ -129,6 +134,38 @@ def visible_between(mesh, r_u, r_v, *, mask=None,
     return mask, dists, num_tested
 
 
+_sensor_geometry = trimesh.creation.icosphere(subdivisions=4)
+_sensor_directions = _sensor_geometry.triangles_center
+_sensor_origins = np.empty_like(_sensor_directions)
+
+@parame.configurable
+def visible_between(mesh, r_u, r_v, *, mask,
+                    radius: cfg.param = 2.0,
+                    step_size: cfg.param = 0.5):
+    F = mesh.faces.shape[0]
+    if mask is None:
+        mask = np.full(F, True)
+    else:
+        assert mask.shape == (F,)
+        mask = mask.astype(bool)
+
+    directions = _sensor_directions
+    origins    = _sensor_origins
+    min_dists  = np.full(F, np.inf)
+    steps      = int(np.linalg.norm(r_v - r_u) / step_size) + 1
+
+    num_tested = 0
+    for origin in np.linspace(r_u, r_v, steps):
+        num_tested += len(directions)
+        origins[:, :] = origin
+        hits = mesh.ray.intersects_first(origins, directions, dists=radius)
+        hits = hits[hits >= 0]
+        dists_hits = np.linalg.norm(origin - mesh.triangles_center[hits], axis=1)
+        min_dists[hits] = np.min((min_dists[hits], dists_hits), axis=0)
+
+    return mask & (min_dists < radius), min_dists, num_tested
+
+
 def _update_edge_visibility(G, mesh, *, force=False, seen=None):
     """Compute which faces are visible while traversing each edge in G
 
@@ -147,9 +184,6 @@ def _update_edge_visibility(G, mesh, *, force=False, seen=None):
     N    = mesh.faces.shape[0]
     mask = ~seen if seen is not None else None
 
-    num_edges = len(G.edges())
-    log.info(f'computing sensor visibility over {num_edges} edges')
-
     # All visible faces. Useful to determine % explored.
     if 'vis_faces' not in G.graph:
         vis_faces = np.zeros(N, dtype=bool)
@@ -161,13 +195,19 @@ def _update_edge_visibility(G, mesh, *, force=False, seen=None):
     # We store it as a 64-bit integer matrix since it is used in a matrix
     # multiplication to compute covisibility degree, where it has to be.
     if 'covis_faces' not in G.graph:
-        covis_faces = np.zeros((N, N), dtype=np.uint32)
+        log.debug('pre-allocating covisibility matrix')
+        covis_faces = np.empty((N, N), dtype=np.uint32)
+        covis_faces[:, :] = False
     else:
         covis_faces = G.graph['covis_faces']
 
     # For printing statistics
     num_tested_sum = 0
     num_faces_sum  = 0
+    t              = time.time()
+
+    num_edges = len(G.edges())
+    log.info(f'computing sensor visibility over {num_edges} edges')
 
     for i, (u, v, data_uv) in enumerate(G.edges.data()):
 
@@ -188,22 +228,29 @@ def _update_edge_visibility(G, mesh, *, force=False, seen=None):
         num_faces_sum  += np.count_nonzero(vis_uv)
 
         if i > 0 and (i % (max(10, num_edges)//10)) == 0:
+            te = time.time()
+            gui.update_vis_faces(visible=vis_faces)
             log.debug(f'computed sensor reading for edge {i:5d}/{num_edges}. '
                       f'tested {10*num_tested_sum/num_edges:.2f} rays/edge. ' 
-                      f'hit {10*num_faces_sum/num_edges:.2f} faces/edge.')
+                      f'hit {10*num_faces_sum/num_edges:.2f} faces/edge. '
+                      f'speed {num_tested_sum/(te-t):.5g} rays/sec.')
             num_tested_sum = 0
             num_faces_sum  = 0
+            t              = time.time()
 
     G.graph['vis_faces']   = vis_faces
     G.graph['covis_faces'] = covis_faces
     G.graph['area_faces']  = mesh.area_faces
 
 
-def update_edge_visibility(G, mesh, *, force=False, load_cache=True,
-                           save_cache=True, seen=None, cache_path='runs/cache'):
+@parame.configurable
+def update_edge_visibility(G, mesh, *, force=False, seen=None,
+                           load_cache: cfg.param = True,
+                           save_cache: cfg.param = True,
+                           cache_path: cfg.param = 'runs/cache'):
     "Caching wrapper for _update_edge_visibility"
 
-    cache_file = path.join(cache_path, f'edge_vis_{graph_md5(G)}_{mesh.md5()}.npz')
+    cache_file = path.join(cache_path, f'edge_vis_{graph_md5(G)}_{_sensor_geometry.md5()}_{mesh.md5()}.npz')
 
     if load_cache and path.exists(cache_file):
         log.info('loading edge visibility from cache at %s', cache_file)
@@ -219,6 +266,9 @@ def update_edge_visibility(G, mesh, *, force=False, load_cache=True,
             log.exception('failed loading cached edge visibility: %s', e)
         else:
             return
+
+    if not trimesh.ray.has_embree:
+        log.error('pyembree not in use!\n%s', trimesh.ray.ray_pyembree.exc)
 
     _update_edge_visibility(G, mesh, force=force, seen=seen)
 

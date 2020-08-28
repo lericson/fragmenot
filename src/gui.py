@@ -141,8 +141,8 @@ def update_face_hsv(*, layer, hues, saturation=1.0, value=1.0, alpha=1.0):
 
 
 def activate_layer(layer):
-    _c.layers[_c.layer] = _c.layers[_c.layer].copy()
     data                = _c.layers[layer].copy()
+    _c.layers[_c.layer] = _c.layers[_c.layer].copy()
     _c.layers[layer]    = _c.envmesh.visual.face_colors
     _c.layers[layer][:] = data
     _c.layer            = layer
@@ -298,6 +298,7 @@ def init(envmesh, title=None, *,
                   'score': _c.envmesh.visual.face_colors.copy()}
 
     update_vis_faces()
+    activate_layer('visible')
 
     return _c
 

@@ -1,12 +1,15 @@
-import os
 import yaml
 import warnings
 import logging
-from os import path
+from functools import wraps
+from os import path, environ
 from inspect import signature
 
 
 log = logging.getLogger(__name__)
+
+# Environment configuration registry. Indirect so we can replace it.
+_environ = environ
 
 # Global configuration registry, used as 2nd source after env vars.
 _file_cfg = {}
@@ -36,24 +39,33 @@ class Module():
 
     def __contains__(self, name):
         envvar = format_envvar(self.name, name)
-        return envvar in os.environ or name in self.file_config
+        return envvar in _environ or name in self.file_config
 
     def __getitem__(self, name):
         envvar = format_envvar(self.name, name)
-        if envvar in os.environ:
-            return yaml.safe_load(os.environ[envvar])
+        if envvar in _environ:
+            return yaml.safe_load(_environ[envvar])
         if name in self.file_config:
             return self.file_config[name]
         raise KeyError(name)
 
     def get(self, name, default):
         envvar = format_envvar(self.name, name)
-        if envvar in os.environ:
-            return yaml.safe_load(os.environ[envvar])
+        if envvar in _environ:
+            return yaml.safe_load(_environ[envvar])
         return self.file_config.get(name, default)
 
 
+def get(modname, varname, default=None):
+    return Module(modname).get(varname, default)
+
+
 def configurable(f):
+    """Decorator to replace default keyword arguments with config values.
+
+    This means that if you change the configuration during runtime (somehow),
+    this will NOT be reflected. See *reconfigurable*.
+    """
     sig = signature(f)
     f.cfg = {}
     for name, fparam in sig.parameters.items():
@@ -62,6 +74,14 @@ def configurable(f):
             val = par.cfg.get(name, fparam.default)
             f.__kwdefaults__[name] = val
     return f
+
+
+def reconfigurable(f):
+    "Decorator to replace default keyword arguments _on invocation_."
+    @wraps(f)
+    def wrap(*a, **k):
+        return configurable(f)(*a, **k)
+    return wrap
 
 
 cfg = Module(__name__)

@@ -41,6 +41,7 @@ parame:
             regular_grid: 1.5
         sensors:
             radius: 3.0
+            step_size: 0.25
 
     longrange:
         prm:
@@ -48,18 +49,24 @@ parame:
             regular_grid: 2.5 
         sensors:
             radius: 5.0
+            step_size: 0.5
+
+    jesus:
+        sensors:
+            radius: 10000.0
 
     # Our experiment conditions
-    pv000: {prevision: {max_distance: 0.00}}
-    pv010: {prevision: {max_distance: 0.10}}
-    pv025: {prevision: {max_distance: 0.25}}
-    pv050: {prevision: {max_distance: 0.50}}
-    pv100: {prevision: {max_distance: 1.00}}
-    pv200: {prevision: {max_distance: 2.00}}
-    pv300: {prevision: {max_distance: 3.00}}
-    pv400: {prevision: {max_distance: 4.00}}
-    pv500: {prevision: {max_distance: 5.00}}
-    pv800: {prevision: {max_distance: 8.00}}
+    pv000: {prevision: {max_distance:   0.00}}
+    pv010: {prevision: {max_distance:   0.10}}
+    pv025: {prevision: {max_distance:   0.25}}
+    pv050: {prevision: {max_distance:   0.50}}
+    pv100: {prevision: {max_distance:   1.00}}
+    pv200: {prevision: {max_distance:   2.00}}
+    pv300: {prevision: {max_distance:   3.00}}
+    pv400: {prevision: {max_distance:   4.00}}
+    pv500: {prevision: {max_distance:   5.00}}
+    pv800: {prevision: {max_distance:   8.00}}
+    pvinf: {prevision: {max_distance: 100.00}}
 
     # This configuration loads pretty fast
     test:

@@ -1,4 +1,3 @@
--e ${PWD}
 -e git+file://${PWD}@98a067e97cb10b0ff3d1eaf5624d9acdf9ec37a1#egg=octomap_python
 -e git+file://${PWD}@7d04ec6e58d3a632a8cd1bce12c2b93b01f067eb#egg=trimesh
 -e git+file://${PWD}@38957e64d9c58222ca20f965c6617b9df98fa834#egg=pyembree
@@ -15,6 +14,7 @@ logcolor==1.0.1
 matplotlib==3.2.2
 more-itertools==8.3.0
 networkx==2.4
+nptyping==1.3.0
 numpy==1.18.5
 packaging==20.4
 Pillow==7.1.2
@@ -32,4 +32,5 @@ scipy==1.4.1
 Shapely==1.7.0
 six==1.15.0
 tifffile==2020.6.3
+typish==1.7.0
 vecrec==0.3.0

@@ -1,6 +1,8 @@
 import threading
 import logging
 
+import numpy as np
+
 
 log = logging.getLogger(__name__)
 
@@ -41,3 +43,19 @@ def graph_md5(G):
                     data = f'{prefix}[{k!r}][{kd!r}] = {vd!r}\n'
                     hasher.update(data.encode('utf-8'))
     return hasher.hexdigest()
+
+
+def format_duration(secs):
+    units = [('s', 60), ('m', 60), ('h', 24), ('d', 7), ('w', np.inf)]
+    v = secs
+    L = []
+    while units:
+        unit, size = units.pop(0)
+        digit = v % size
+        if digit > 1e-18:
+            L.append(f'{digit:.0f}{unit}')
+        v -= digit
+        v /= size
+        if v < 1:
+            break
+    return ''.join(L[::-1])

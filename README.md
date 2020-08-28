@@ -12,9 +12,11 @@ Create a virtualenv:
 
     virtualenv --python=/usr/bin/python3 env
 
-Install dependencies:
+Install dependencies (Ubuntu)
 
-    ./env/bin/pip install -r requirements.txt
+    apt-get install libspatialindex-dev
+    [You need to download, compile and install embree v2.x.]
+    ./env/bin/pip install -r requirements.txt -e .
 
 Run the demo:
 

@@ -39,7 +39,8 @@ def subgraph(roadmap, *, mesh, seen_faces, seen_states,
     tree = cKDTree(faces_center[seen_faces])
     dists, inds = tree.query(faces_center, distance_upper_bound=max_distance)
 
-    vis_faces = dists < max_distance + 1e-8
+    vis_faces  = roadmap.graph['vis_faces'].copy()
+    vis_faces &= dists < max_distance + 1e-8
 
     log.debug('building subgraph')
     roadmap_local = roadmap.copy()

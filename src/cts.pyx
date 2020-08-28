@@ -142,12 +142,14 @@ cdef inline bint recurred(NodeDataMap Score, list path, list path_s, int state, 
     return False
 
 
+# cts.expand() is called by tree_search.expand(), which sets the defaults for
+# all parameters.
 def expand(object T, *, object roadmap,
-           int    max_depth = 50,
-           int    steps     = 15000,
-           int    max_size  = 30000,
-           double lam       = 50e-2,
-           int    min_faces = 1):
+           int    max_depth,
+           int    steps,
+           int    max_size,
+           double lam,
+           double K,):
 
     cdef object G = roadmap
 
@@ -182,11 +184,13 @@ def expand(object T, *, object roadmap,
     #for (i,) in zip(*np.nonzero(face_vis)):
     #    assert (face_degree[i] == np.dot(face_covis[i], vis_unseen)), f'{i}: {face_degree[i]}'
 
-    face_score = 1e2*np.exp(-1e-1*(face_degree.clip(0, 1000)))
-    face_score[face_degree < min_faces] = 1e-12
-    face_score[~vis_unseen]             = 1e-12
+    # A 64-bit float has a minimum exponent of 2^-1023 ~ 1e-308. Scale the face
+    # degree accordingly.
+    face_score = K*np.exp((-1e-1*face_degree).clip(-200, 0))
+    #face_score[face_degree < min_faces] = 1e-16
+    face_score[~vis_unseen]             = 1e-16
 
-    gui.update_face_hsv(hues=0.8/face_score.max()*face_score, layer='score')
+    gui.update_face_hsv(hues=0.8*(1 - np.log(face_score/K)/-100), layer='score')
     #gui.update_face_hsv(hues=0.8/face_degree.max()*face_degree)
 
     log.info('  face_area: %s', statstr(face_area[vis_unseen]))
@@ -199,12 +203,6 @@ def expand(object T, *, object roadmap,
 
     cdef int    best_node  = T.graph['best_node']
     cdef double best_score = T.graph['best_score']
-
-    """
-    from collections import deque
-    stack = deque([([T.root], n) for n in G.adj[S[T.root]]])
-    """
-
     cdef dict Gadj = G._adj
     cdef dict Tadj = T._adj
     cdef object N_child_get = N_child.__getitem__
@@ -218,25 +216,6 @@ def expand(object T, *, object roadmap,
 
         ## SELECTION: find an unexplored branching point in the tree. Result is
         ## the chosen next state S[v], and its path.
-
-        """
-        path, s_v = stack.popleft()
-        u = path[-1]
-        s_u = S[u]
-
-        # Check if this edge has been visited before in this direction along
-        # this path. If so, skip it.
-        score_u = Score[u]
-        s_uv = s_u, s_v
-        if any(score_u <= Score[w_] for (w, w_) in pairwise(path) if s_uv == (S[w], S[w_])):
-            continue
-
-        v = next_label()
-        T.add_node(v, s=s_v)
-        T.add_edge(u, v)
-        path = path + [v]
-        stack.extend([(path, v_) for v_ in Gadj[s_v]])
-        """
 
         path, u = [], T.root
         path_s = []
@@ -280,7 +259,7 @@ def expand(object T, *, object roadmap,
         #if any(score_u <= Score[w_] for (w, w_) in pairwise(path) if s_uv == (S[w], S[w_])):
         if recurred(Score, path, path_s, s_u, score_u):
              n_recurred += 1
-             continue
+             #continue
         n_inserted += 1
 
         # EXPANSION: add new node to search tree

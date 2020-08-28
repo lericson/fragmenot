@@ -89,12 +89,56 @@ def is_occupied(point, *, octree):
     return octree.isNodeOccupied(node)
 
 
-def sample_coord(bbox_min, bbox_max, octree):
+def is_line_of_sight(mesh, a, b):
+    "Is the line a-b free from occlusions"
+    return mesh.ray.intersect_any([a], [b - a])[0]
+
+
+def sample_coord(bbox_min, bbox_max, *, mesh, index):
     for i in range(100):
         coord = np.random.uniform(bbox_min, bbox_max, size=(3,))
-        if not is_occupied(coord, octree=octree):
+        if nearest_visible(coord, index=index, mesh=mesh):
             return coord
     raise RuntimeError('rejection sampling ran out of attempts')
+
+
+def nearest_visible(r, *, mesh, index, margin=0.1, max_dist=np.inf):
+    "Find the nearest neighbors *r_n* of *r* s.t. n-r is not occluded."
+    # Find neighbor positions R_nearest
+    nearest    = index.nearest(r)[1:]
+    R_nearest  = np.array([r_i for r_i, dd_i in nearest])
+
+    # Ray origin is always r, directed towards each neighbor.
+    origins    = np.full_like(R_nearest, r)
+    directions = R_nearest - r
+
+    # Compute the distance from r to each neighbor, then adjust the origin
+    # margin meters backwards.
+    dists      = np.linalg.norm(directions, axis=1)
+    origins   -= directions/dists[:, None]*margin
+
+    is_near    = dists < max_dist
+    origins    =    origins[is_near]
+    directions = directions[is_near]
+    nearest    = np.array(nearest, dtype=object)[is_near]
+
+    # dists is used as the maximum ray intersection distance, so increase its
+    # margin too. In effect this means that we test for occlusion a little bit
+    # before r, and a little bit after the neighbor's coordinate.
+    max_dists  = dists + margin
+    hits       = mesh.ray.intersects_first(origins, directions, dists=max_dists)
+
+    # hits is -1 where a ray did not hit a face.
+    is_hit     = hits >= 0
+    hit_faces  = hits[is_hit]
+
+    # Compute hit distance for each hitting ray
+    hit_dists = np.linalg.norm(mesh.triangles_center[hit_faces] - origins[is_hit], axis=1)
+
+    # Let is_hit be True only when the hit is less than maximum ray distance.
+    is_hit[is_hit] &= hit_dists+1e-8 < max_dists[is_hit]
+
+    return [(r_i, dd_i) for r_i, dd_i, is_hit_i in np.c_[nearest, is_hit] if not is_hit_i]
 
 
 @parame.configurable
@@ -152,6 +196,7 @@ def new(*, mesh, octree, bbox=None, nodes={},
     log.debug(f'spatial index bin count: {index.num_bins}')
 
     G = nx.Graph()
+    #G.graph['_mesh']   = mesh
     #G.graph['_index']  = index
     #G.graph['_octree'] = octree
 
@@ -164,7 +209,7 @@ def new(*, mesh, octree, bbox=None, nodes={},
 
     for new, r_new in enumerate(coords):
 
-        _connect(G, new, r_new, index, octree)
+        _connect(G, new, r_new, mesh=mesh, index=index)
 
         if ((new+1) % (len(coords)//10)) == 0:
             log.debug(f'connected {new+1:5d} nodes, mean degree: %.2f',
@@ -172,42 +217,37 @@ def new(*, mesh, octree, bbox=None, nodes={},
             gui.update_roadmap(G)
             gui.wait_draw()
 
+    if not nx.is_connected(G):
+        log.warn('roadmap is not connected, cutting out maximal component')
+        max_comp = max(nx.connected_components(G), key=len)
+        for node, dd_node in list(G.nodes.data()):
+            if node not in max_comp:
+                log.debug('remove node %d (nbrs: %s)', node, list(G.adj[node]))
+                index.remove_nearest(dd_node['r'])
+                G.remove_node(node)
+
     sensors.update_edge_visibility(G, mesh)
 
     for node, r_node in nodes.items():
         if r_node == 'random':
-            r_node = sample_coord(bbox_min, bbox_max, octree)
+            r_node = sample_coord(bbox_min, bbox_max, mesh=mesh, index=index)
         index.add(r_node, node=node)
         G.add_node(node, r=r_node, skip=False)
-        _connect(G, node, r_node, index, octree, force=True)
+        _connect(G, node, r_node, mesh=mesh, index=index, force=True)
 
     sensors.update_edge_visibility(G, mesh, save_cache=False)
 
     return G
 
 
-def insert(G, r_new):
-    index  = G.graph['_index']
-    octree = G.graph['_octree']
-    new    = len(G)
-
-    index.add(r_new, node=new)
-    G.add_node(new, r=r_new, skip=False)
-    _connect(G, new, r_new, index, octree, force=True)
-
-    return new
-
-
 @parame.configurable
-def _connect(G, new, r_new, index, octree, *, force=False,
+def _connect(G, new, r_new, *, index, mesh, force=False,
              num_adjacent_max: cfg.param = np.inf,
              max_dist: cfg.param = np.inf):
 
-    nbrs = [(data['node'], r_neigh)
-            for r_neigh, data in index.nearest(r_new)[1:]
-            if is_traversable(octree, r_new, r_neigh)]
+    for r_neigh, dd_neigh in nearest_visible(r_new, mesh=mesh, index=index):
 
-    for neigh, r_neigh in nbrs:
+        neigh = dd_neigh['node']
 
         if num_adjacent_max < G.degree(new):
             break
@@ -225,7 +265,7 @@ def _connect(G, new, r_new, index, octree, *, force=False,
 
 @parame.configurable
 def update_jumps(G, *, seen, active=(),
-                 skip_max_faces: cfg.param = 4):
+                 skip_max_faces: cfg.param = 0):
 
     vis_faces = G.graph['vis_faces']
     vis_unseen = vis_faces & ~seen
@@ -233,9 +273,9 @@ def update_jumps(G, *, seen, active=(),
     # Mark edges skip if they see no unseen faces
     for u, v, dd_uv in list(G.edges.data()):
         if dd_uv['jump']:
-            continue
-        unseen_faces_uv = np.count_nonzero(dd_uv['vis_faces'] & vis_unseen)
-        dd_uv['skip'] = unseen_faces_uv < skip_max_faces
+            G.remove_edge(u, v)
+        num_unseen_uv = np.count_nonzero(dd_uv['vis_faces'] & vis_unseen)
+        dd_uv['skip'] = num_unseen_uv <= skip_max_faces
 
     for n, dd_n in G.nodes.data():
         nbrs_skip = [dd_m['skip'] for dd_m in G._adj[n].values()]
@@ -247,12 +287,17 @@ def update_jumps(G, *, seen, active=(),
     Jump = NodeDataMap(G, 'jump')
 
     nodes = {u for u in G if Jump[u] or u in active}
-    edges = {uv for uv in combinations(nodes, 2) if uv not in G.edges}
+    edges = [uv for uv in combinations(nodes, 2) if uv not in G.edges]
 
     log.info('%d jump nodes, adding %d edges', len(nodes), len(edges))
 
+    max_degree = 36
+    np.random.shuffle(edges)
+
     _shortest_path_memo.clear()
     for u, v in edges:
+        if u not in active and v not in active and max_degree <= max(G.degree(u), G.degree(v)):
+            continue
         try:
             _add_jump(G, u, v, skip=True, jump=True)
         except nx.NetworkXNoPath:

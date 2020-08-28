@@ -87,5 +87,10 @@ class Index():
         L = self.bins[bidx0][bidx1][bidx2]
         L.append((coord, kwargs))
 
+    def remove_nearest(self, coord, *, distfun=euclidean_dist):
+        bidx0, bidx1, bidx2 = self.bindex(coord)
+        L = self.bins[bidx0][bidx1][bidx2]
+        L.pop(min(range(len(L)), key=lambda i: distfun(coord, *L[i])))
+
     def iter_bins(self):
         return (b for layer in self.bins for row in layer for b in row)
