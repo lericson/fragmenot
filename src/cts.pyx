@@ -2,13 +2,12 @@
 "Plan a path for exploration in a state graph"
 
 import sys
+cimport cython
 import logging
+from libc.math cimport exp
 
 import numpy as np
-import networkx as nx
 from networkx.utils import pairwise
-cimport cython
-cimport numpy as np
 
 import gui
 
@@ -123,23 +122,26 @@ cdef class NodeDataMap():
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline double sum_where_1d(double [::1] a, unsigned char [::1] mask) nogil:
-    cdef Py_ssize_t k = a.shape[0]
-    cdef double r = 0.0
-    for i in range(k):
-        if mask[i]:
-            r += a[i]
-    return r
-
-
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cdef inline bint recurred(NodeDataMap Score, list path, list path_s, int state, double score):
+cdef bint recurred(NodeDataMap Score, list path, list path_s, int state, double score):
     cdef int i
     for i in range(len(path) - 1):
         if path_s[i] == state and score <= Score[path[i]]:
             return True
     return False
+
+
+cdef double _propagate(double [::1] face_score,
+                       unsigned char [::1] seen_u,
+                       unsigned char [::1] vis_uv,
+                       unsigned char [::1] seen_v):
+    "Compute seen_v, gain_v"
+    cdef Py_ssize_t k = face_score.shape[0]
+    cdef double gain_v = 0.0
+    for i in range(k):
+        seen_v[i] = seen_u[i] or vis_uv[i]
+        if seen_v[i] and not seen_u[i]:
+            gain_v += face_score[i]
+    return gain_v
 
 
 # cts.expand() is called by tree_search.expand(), which sets the defaults for
@@ -149,7 +151,7 @@ def expand(object T, *, object roadmap,
            int    steps,
            int    max_size,
            double lam,
-           double K,):
+           double K):
 
     cdef object G = roadmap
 
@@ -206,9 +208,8 @@ def expand(object T, *, object roadmap,
     cdef dict Gadj = G._adj
     cdef dict Tadj = T._adj
     cdef object N_child_get = N_child.__getitem__
-    cdef np.ndarray vis
-    cdef np.ndarray seen_u
-    cdef double score_u, score, gain, distfac
+    cdef double score_u, score_v, gain_v, distfac_v, dist_u, dist_v
+    cdef double dist_root = Dist[T.root]
 
     cdef int n_recurred = 0, n_inserted = 0
 
@@ -267,21 +268,23 @@ def expand(object T, *, object roadmap,
         T.add_node(v, s=s_v)
         T.add_edge(u, v)
 
-        seen_u   = Seen[u]
-        Dist[v]  = <double>Dist[u] + <double>D[s_u, s_v]
+        seen_v  = np.empty(face_score.shape, dtype=bool)
+        gain_v  = _propagate(face_score, Seen[u], Vis_faces[s_u, s_v], seen_v)
+        Seen[v] = seen_v
+
+        dist_u = Dist[u]
+        dist_v = Dist[v] = dist_u + D[s_u, s_v]
+
         Depth[v] = <int>Depth[u] + 1
-        vis      = Vis_faces[s_u, s_v] & ~seen_u
-        Seen[v]  = seen_u | vis
 
         # SIMULATION: estimate the reward from this new state
-        distfac = np.exp(-lam*<double>(Dist[v] - Dist[T.root]))
-        gain    = sum_where_1d(face_score, vis) * distfac
-        score   = Score[v] = score_u + gain
+        distfac_v = exp(lam*(dist_root - dist_v))
+        score_v   = Score[v] = score_u + gain_v * distfac_v
 
         # Strict inequality ensures that if all nodes are equal (i.e. if no new
         # faces were found), we return the root node.
-        if score > best_score:
-            best_score = score
+        if score_v > best_score:
+            best_score = score_v
             best_node = v
 
         # PROPAGATION: bubble the reward up the tree

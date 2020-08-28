@@ -135,7 +135,7 @@ def visible_between_DEPRECATED(mesh, r_u, r_v, *, mask=None,
 
 
 _sensor_geometry = trimesh.creation.icosphere(subdivisions=4)
-_sensor_directions = _sensor_geometry.triangles_center
+_sensor_directions = _sensor_geometry.vertices
 _sensor_origins = np.empty_like(_sensor_directions)
 
 @parame.configurable
@@ -250,7 +250,7 @@ def update_edge_visibility(G, mesh, *, force=False, seen=None,
                            cache_path: cfg.param = 'runs/cache'):
     "Caching wrapper for _update_edge_visibility"
 
-    cache_file = path.join(cache_path, f'edge_vis_{graph_md5(G)}_{_sensor_geometry.md5()}_{mesh.md5()}.npz')
+    cache_file = path.join(cache_path, f'edge_vis_{graph_md5(G)}_{_sensor_directions.md5()}_{mesh.md5()}.npz')
 
     if load_cache and path.exists(cache_file):
         log.info('loading edge visibility from cache at %s', cache_file)

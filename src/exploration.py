@@ -200,7 +200,7 @@ def run(*, octree, mesh, state=None,
 
         log.info('step %d ends\n', i)
 
-        if percent_complete/100 < state.completion:
+        if not (state.completion < percent_complete/100):
             log.info('exploration complete!')
             break
 

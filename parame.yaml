@@ -17,6 +17,9 @@ prm:
     # Upper and lower bounds to set on the Z coordinates in roadmap generation.
     z_bounds: [1.5, 3.5]
 
+    # T r i a n g u l a r    t e s s e l l a t i o n .
+    regular_grid: true
+
 world:
     resolution:   0.4
 
@@ -38,7 +41,6 @@ parame:
     shortrange:
         prm:
             max_dist: 1.5
-            regular_grid: 1.5
         sensors:
             radius: 3.0
             step_size: 0.25
@@ -46,7 +48,6 @@ parame:
     longrange:
         prm:
             max_dist: 2.5
-            regular_grid: 2.5 
         sensors:
             radius: 5.0
             step_size: 0.5
@@ -71,10 +72,14 @@ parame:
     # This configuration loads pretty fast
     test:
         world:
-            resolution:   0.6
+            resolution:   0.8
+        sensors:
+            radius:       100.0
+        prm:
+            max_dist:     2.0
         prevision:
             max_distance: 100.0
         tree_search:
-            steps:        30000
+            steps:        12000
         exploration:
             close_on_finish: false
