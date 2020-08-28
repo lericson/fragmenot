@@ -1,4 +1,3 @@
-from cython.parallel import prange
 cimport cython
 cimport numpy as np
 import numpy as np
