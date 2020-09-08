@@ -94,14 +94,6 @@ def is_line_of_sight(mesh, a, b):
     return mesh.ray.intersect_any([a], [b - a])[0]
 
 
-def sample_coord(bbox_min, bbox_max, *, mesh, index):
-    for i in range(100):
-        coord = np.random.uniform(bbox_min, bbox_max, size=(3,))
-        if nearest_visible(coord, index=index, mesh=mesh):
-            return coord
-    raise RuntimeError('rejection sampling ran out of attempts')
-
-
 def nearest_visible(r, *, mesh, index, margin=0.1, max_dist=np.inf):
     "Find the nearest neighbors *r_n* of *r* s.t. n-r is not occluded."
     # Find neighbor positions R_nearest
@@ -196,8 +188,9 @@ def new(*, mesh, octree, bbox=None, nodes={},
     log.debug(f'spatial index bin count: {index.num_bins}')
 
     G = nx.Graph()
-    #G.graph['_mesh']   = mesh
-    #G.graph['_index']  = index
+    G.graph['_mesh']  = mesh
+    G.graph['_index'] = index
+    G.graph['_bbox']  = bbox
     #G.graph['_octree'] = octree
 
     for i, coord in enumerate(coords):
@@ -228,31 +221,45 @@ def new(*, mesh, octree, bbox=None, nodes={},
 
     sensors.update_edge_visibility(G, mesh)
 
-    for node, r_node in nodes.items():
-        if r_node == 'random':
-            r_node = sample_coord(bbox_min, bbox_max, mesh=mesh, index=index)
+    return G
+
+
+def insert_random(G, node, *, num_attempts=10):
+
+    mesh  = G.graph['_mesh']
+    index = G.graph['_index']
+    bbox  = G.graph['_bbox']
+
+    bbox_min, bbox_max = bbox
+
+    for i in range(num_attempts):
+        r_node = np.random.uniform(bbox_min, bbox_max, size=(3,))
         index.add(r_node, node=node)
         G.add_node(node, r=r_node, skip=False)
         _connect(G, node, r_node, mesh=mesh, index=index, force=True)
+        if G.degree(node) > 0:
+            break
+        index.remove_nearest(r_node)
+        G.remove_node(node)
+    else:
+        raise RuntimeError('could not place node')
 
     sensors.update_edge_visibility(G, mesh, save_cache=False)
-
-    return G
 
 
 @parame.configurable
 def _connect(G, new, r_new, *, index, mesh, force=False,
-             num_adjacent_max: cfg.param = np.inf,
-             max_dist: cfg.param = np.inf):
+             max_degree: cfg.param = np.inf,
+             max_dist:   cfg.param = np.inf):
 
     for r_neigh, dd_neigh in nearest_visible(r_new, mesh=mesh, index=index):
 
         neigh = dd_neigh['node']
 
-        if num_adjacent_max < G.degree(new):
+        if max_degree <= G.degree(new):
             break
 
-        if num_adjacent_max < G.degree(neigh) and not force:
+        if max_degree <= G.degree(neigh) and not force:
             continue
 
         if max_dist < np.linalg.norm(r_new - r_neigh)-1e-8:
@@ -265,7 +272,8 @@ def _connect(G, new, r_new, *, index, mesh, force=False,
 
 @parame.configurable
 def update_jumps(G, *, seen, active=(),
-                 skip_max_faces: cfg.param = 0):
+                 skip_max_faces:  cfg.param = 0,
+                 max_degree_jump: cfg.param = 36):
 
     vis_faces = G.graph['vis_faces']
     vis_unseen = vis_faces & ~seen
@@ -288,20 +296,19 @@ def update_jumps(G, *, seen, active=(),
 
     nodes = {u for u in G if Jump[u] or u in active}
     edges = [uv for uv in combinations(nodes, 2) if uv not in G.edges]
+    np.random.shuffle(edges)
 
     log.info('%d jump nodes, adding %d edges', len(nodes), len(edges))
 
-    max_degree = 36
-    np.random.shuffle(edges)
+    # Need to clear previous shortest paths memo
+    G.graph['_shortest_path_memo'] = {}
 
-    _shortest_path_memo.clear()
     for u, v in edges:
-        if u not in active and v not in active and max_degree <= max(G.degree(u), G.degree(v)):
-            continue
-        try:
-            _add_jump(G, u, v, skip=True, jump=True)
-        except nx.NetworkXNoPath:
-            log.warn(f'jump edge insertion failed, no path {u}-{v} found')
+        if {u, v} & active or max(G.degree(u), G.degree(v)) < max_degree_jump:
+            try:
+                _add_jump(G, u, v, skip=True, jump=True)
+            except nx.NetworkXNoPath:
+                log.warn(f'jump edge insertion failed, no path {u}-{v} found')
 
     # Mark nodes skip (and remove skip edges) when their edges are skip
     n_removed = 0
@@ -330,7 +337,18 @@ def _weightfunc(u, v, dd):
         return dd['d']
 
 
-_shortest_path_memo = {}
+def _shortest_path_memoized(G, u, v):
+    "Shortest path from u to v in G, memoizes all shortest paths from u."
+    _shortest_path_memo = G.graph.setdefault('_shortest_path_memo', {})
+
+    if u not in _shortest_path_memo:
+        _shortest_path_memo[u] = nx.shortest_path(G, u, weight=_weightfunc)
+
+    if v not in _shortest_path_memo[u]:
+        raise nx.NetworkXNoPath((u, v))
+
+    return _shortest_path_memo[u][v]
+
 
 def _add_jump(G, u, v, **kw):
     "Add jump u-v in G"
@@ -339,18 +357,9 @@ def _add_jump(G, u, v, **kw):
     Vs        = EdgeDataMap(G, 'vs')
     Vis_faces = EdgeDataMap(G, 'vis_faces')
 
-    # Find shortest path from u to v in G, and cache the result.
-    if u not in _shortest_path_memo:
-        _shortest_path_memo[u] = nx.shortest_path(G, u, weight=_weightfunc)
+    path = _shortest_path_memoized(G, u, v)
 
-    if v not in _shortest_path_memo[u]:
-        raise nx.NetworkXNoPath((u, v))
-
-    path = _shortest_path_memo[u][v]
-
-    #path = nx.shortest_path(G, u, v, weight=_weightfunc)
-
-    # Turn the path into an actually traversible path.
+    # Turn the path into its non-jump edge sequence.
     vs_uv  = []
     for p, q in pairwise(path):
         vs_pq = Vs[p, q]
@@ -364,4 +373,5 @@ def _add_jump(G, u, v, **kw):
     rs_uv  = [R[s] for s in vs_uv]
     vis_uv = np.any([Vis_faces[s, s_] for s, s_ in pairwise(vs_uv)], axis=0)
     d_uv   = np.sum(np.linalg.norm(np.diff(rs_uv, axis=0), axis=1))
+
     G.add_edge(u, v, d=d_uv, vis_faces=vis_uv, rs=rs_uv, vs=vs_uv, **kw)

@@ -38,7 +38,8 @@ class State():
             start_position: cfg.param = 'random'):
         seen    = np.zeros(mesh.faces.shape[0], dtype=bool)
         start   = -1
-        roadmap = prm.new(mesh=mesh, octree=octree, nodes={start: start_position})
+        roadmap = prm.new(mesh=mesh, octree=octree)
+        prm.insert_random(roadmap, start)
         seen   |= np.all([vis for _, _, vis in roadmap.edges(start, data='vis_faces')], axis=0)
         pos     = roadmap.nodes[start]['r']
         return cls(mesh, pos, seen, roadmap, start, trajectory=[pos])
@@ -149,7 +150,7 @@ def step(state):
 
 @parame.configurable
 def output_path(*args, create=True,
-                output_dir: cfg.param = f'runs{path.sep}run_{getpid()}'):
+                output_dir: cfg.param = f'var/runs/run_{getpid()}'):
     if create:
         makedirs(output_dir, exist_ok=True)
     return path.join(output_dir, *args)
@@ -158,7 +159,7 @@ def output_path(*args, create=True,
 @threadable
 @parame.configurable
 def run(*, octree, mesh, state=None,
-        num_steps:        cfg.param = 1000,
+        num_steps:        cfg.param = 5000,
         percent_complete: cfg.param = 100.0,
         close_on_finish:  cfg.param = True):
 
@@ -202,6 +203,7 @@ def run(*, octree, mesh, state=None,
 
         if not (state.completion < percent_complete/100):
             log.info('exploration complete!')
+            log.info('link: file://{path.abspath(output_path())}')
             break
 
     if close_on_finish:

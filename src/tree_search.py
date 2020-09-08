@@ -75,29 +75,33 @@ def statstr(a):
 
 @parame.configurable
 def expand(T, *, roadmap,
-           max_depth: cfg.param = 50,
-           steps:     cfg.param = 15000,
-           max_size:  cfg.param = 2.00,
-           alpha:     cfg.param = 1e-1,
-           lam:       cfg.param = 50e-2,
-           K:         cfg.param = 1e3):
+           max_depth:      cfg.param = 50,
+           steps:          cfg.param = 15000,
+           max_size:       cfg.param = 2.00,
+           alpha:          cfg.param = 1e-1,
+           lam:            cfg.param = 35e-2,
+           K:              cfg.param = 1e3,
+           score_function: cfg.param = 'ours',
+           weight_function: cfg.param = 'ours',
+           path_selection: cfg.param = 'ours'):
 
     if isinstance(max_size, float):
         max_size = int(steps*max_size)
 
+    weight_function = cts.weight_functions[weight_function]
+    score_function  = cts.score_functions[score_function]
+    path_selection  = cts.path_selections[path_selection]
+
     return cts.expand(T, roadmap=roadmap, max_depth=max_depth, steps=steps,
-                      max_size=max_size, alpha=alpha, lam=lam, K=K)
+                      max_size=max_size, alpha=alpha, lam=lam, K=K,
+                      score_function=score_function,
+                      weight_function=weight_function,
+                      path_selection=path_selection)
 
 
 def is_done(T):
     "Do we know some place to go?"
     return T.graph['best_node'] != T.root
-
-
-def best_path(T):
-    path   = T.path(T.root, T.graph['best_node'])
-    path_s = [T.S[u] for u in path]
-    return path_s, T.Seen[path[-1]]
 
 
 @parame.configurable
@@ -118,4 +122,4 @@ def plan_path(*, start, seen, roadmap,
     else:
         raise NoPlanFoundError()
 
-    return best_path(stree)
+    return stree.graph['best_path_G'], stree.graph['best_path_seen']

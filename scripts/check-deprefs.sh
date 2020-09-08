@@ -2,15 +2,18 @@
 
 set -e
 
-for GIT_WORK_TREE in env/src/*; do
+for GIT_WORK_TREE in ./env/src/*; do
   GIT_DIR=$GIT_WORK_TREE/.git
   DEPNAME=$(basename $GIT_WORK_TREE)
   DEPREF=refs/heads/deps/$DEPNAME
+  if ! git rev-parse $DEPREF >/dev/null 2>&1; then
+    continue
+  fi
   if ! GIT_WORK_TREE=$GIT_WORK_TREE GIT_DIR=$GIT_DIR git diff --quiet; then
-    echo $GIT_WORK_TREE has uncommitted changes;
+    echo $GIT_WORK_TREE has uncommitted changes
   fi;
-  if [ $(git rev-parse $DEPREF) != $(git --git-dir=$GIT_DIR rev-parse HEAD) ]; then
-    echo $GIT_WORK_TREE HEAD is not equal to $DEPREF;
+  if [[ $(git rev-parse $DEPREF) != $(git --git-dir=$GIT_DIR rev-parse HEAD) ]]; then
+    echo $GIT_WORK_TREE HEAD is not equal to $DEPREF
     git fetch -n $GIT_DIR +HEAD:$DEPREF
   fi;
 done
@@ -22,12 +25,20 @@ while read -ra LINE; do
   COMMIT=${LINE[1]}
   DEPNAME=${LINE[2]}
   DEPREF=refs/heads/deps/$DEPNAME
-  GIT_DIR=env/src/$DEPNAME/.git
-  if [ $(git rev-parse $DEPREF) != $(git --git-dir=$GIT_DIR rev-parse $COMMIT) ]; then
+  GIT_WORK_TREE=./env/src/$DEPNAME
+  GIT_DIR=$GIT_WORK_TREE/.git
+  if [ ! -e $GIT_WORK_TREE ]; then
+    echo $GIT_WORK_TREE does not exist, you need to re-run pip install -r requirements.txt
+  fi
+  if ! git rev-parse $DEPREF >/dev/null 2>&1; then
+    echo $DEPREF does not exist, you need to fetch deps references
+    continue
+  fi
+  if [[ $(git rev-parse $DEPREF) != $(git --git-dir=$GIT_DIR rev-parse $COMMIT) ]]; then
     echo $REQUIREMENTS:$LNO: Commit $COMMIT is not equal to $DEPREF '('$(git rev-parse $DEPREF)')'
   fi
 done
 
 if ! git diff --quiet; then
-  echo Repository has uncommited changes
+  echo Main repository has uncommited changes
 fi

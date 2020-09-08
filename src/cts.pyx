@@ -4,10 +4,16 @@
 
 import sys
 cimport cython
+from cython.view cimport array as cvarray
+#from cython.parallel import prange
+from cython.operator cimport dereference as deref, preincrement as inc
 import logging
-from libc.math cimport exp
+from libc.math cimport exp, sqrt
+from libcpp.pair cimport pair
 from libcpp.vector cimport vector
-from libcpp.map cimport map as hashmap
+from libcpp.list cimport list as stlist
+from libcpp.unordered_set cimport unordered_set
+from libcpp.unordered_map cimport unordered_map as hashmap
 
 import numpy as np
 from networkx.utils import pairwise
@@ -15,19 +21,32 @@ from networkx.utils import pairwise
 import gui
 
 
+# Sanity test that is quite expensive.
+DEF test_seen = False
+
 log = logging.getLogger(__name__)
 
 
-"""
-# Label maker. The advantage of doing this is that we can never have a bug
-# where a new node gets assigned an already existing node label. We might run
-# out of node labels though, and they may get pretty long.
-cdef int _label = 0
-cdef inline int next_label() nogil:
-    global _label
-    _label += 1
-    return _label
-"""
+cdef enum:
+    SF_OURS
+    SF_GN
+
+score_functions = {'ours': SF_OURS,
+                   'gn': SF_GN}
+
+cdef enum:
+    WF_OURS
+    WF_UNIFORM
+
+weight_functions = {'ours': WF_OURS,
+                    'uniform': WF_UNIFORM}
+
+cdef enum:
+    PS_OURS
+    PS_BFS
+
+path_selections = {'ours': PS_OURS,
+                   'bfs': PS_BFS}
 
 
 def statstr(a):
@@ -42,105 +61,34 @@ def statstr(a):
                           f'max={np.max(a):.5g}', f'std={np.std(a):.5g}'])
 
 
-cdef class EdgeDataMap():
-    cdef dict _adj
-    cdef object _key
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double [::1] compute_covis_area(const unsigned char [:, :] covis,
+                                     const unsigned char [:] vis,
+                                     const double [:] area,
+                                     double [::1] covis_area):
+    cdef double area_i
 
-    def __cinit__(self, graph, key):
-        self._adj = graph._adj
-        self._key = key
+    with nogil:
+        for i in range(covis.shape[0]):
+            area_i = 0.0
+            if vis[i]:
+                for j in range(covis.shape[1]):
+                    if vis[j] and covis[i, j]:
+                        area_i += area[j]
 
-    def __iter__(self):
-        return iter(self._adj)
+            covis_area[i] = 12*sqrt(area_i)
 
-    def __len__(self):
-        return len(self._adj)
+    return covis_area
 
-    def __getitem__(self, n):
-        u, v = n
-        return self._adj[u][v][self._key]
-
-    def __setitem__(self, n, val):
-        u, v = n
-        self._adj[u][v][self._key] = val
-
-    def __delitem__(self, n):
-        u, v = n
-        del self._adj[u][v][self._key]
-
-    def __contains__(self, n):
-        u, v = n
-        return ((u in self._adj) and 
-                (v in self._adj[u]) and 
-                (self._key in self._adj[u][v]))
-
-    def __str__(self):
-        return str(dict(iter(self)))
-
-    def __repr__(self):
-        return '%s(%r, %r)' % (self.__class__.__name__, self._adj, self._key)
-
-    def values(self):
-        key = self._key
-        return [dd_uv[key]
-                for nbrs in self._adj.values()
-                for dd_uv in nbrs.values()
-                if key in dd_uv]
-
-
-cdef class NodeDataMap():
-    cdef dict _node
-    cdef object _key
-
-    def __cinit__(self, graph, key):
-        self._node = graph._node
-        self._key = key
-
-    def __len__(self):
-        return len(self._node)
-
-    def __iter__(self):
-        return iter(self._node)
-
-    def __getitem__(self, u):
-        return self._node[u][self._key]
-
-    def __setitem__(self, u, val):
-        self._node[u][self._key] = val
-
-    def __delitem__(self, u):
-        del self._node[u][self._key]
-
-    def __contains__(self, u):
-        return ((u in self._node) and 
-                (self._key in self._node[u]))
-
-    def __str__(self):
-        return str(dict(iter(self)))
-
-    def __repr__(self):
-        return '%s(%r, %r)' % (self.__class__.__name__, self._node, self._key)
-
-    def values(self):
-        return [dd[self._key] for dd in self._node.values() if self._key in dd]
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef bint recurred(double [::1] Score, list path, list path_s, int state, double score):
-    cdef int i
-    for i in range(len(path) - 1):
-        if path_s[i] == state and score <= Score[<int>path[i]]:
-            return True
-    return False
-
-
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cdef double _propagate(double [::1] face_score,
-                       unsigned char [::1] seen_u,
-                       unsigned char [::1] vis_uv,
-                       unsigned char [::1] seen_v) nogil:
+cdef double propagate(double [::1] face_score,
+                      unsigned char [::1] seen_u,
+                      unsigned char [::1] vis_uv,
+                      unsigned char [::1] seen_v) nogil:
     "Compute seen_v, gain_v"
     cdef Py_ssize_t k = face_score.shape[0]
     cdef double gain_v = 0.0
@@ -151,6 +99,39 @@ cdef double _propagate(double [::1] face_score,
     return gain_v
 
 
+ctypedef stlist[int] int_list
+ctypedef stlist[int].iterator int_list_iterator
+ctypedef stlist[int].const_iterator int_list_const_iterator
+
+
+cdef struct NodeT:
+    int s
+    int depth
+    int n_child
+    bint skip
+    double score
+    double dist
+    #unsigned char [::1]* seen
+    int_list unvisited
+
+
+cdef inline long h(int a, int b) nogil:
+    "Hashing pairs of integers is hard for STL."
+    return ((<long>(<unsigned int>a)) << 8*sizeof(int)) | <unsigned int>b
+
+
+cdef cppclass EdgeExistsPredicate:
+    unordered_set[long] *E
+    int s
+
+    EdgeExistsPredicate(unordered_set[long] &E, int s) nogil:
+        this.E = &E
+        this.s = s
+
+    bint __call__ "operator()"(int v):
+        return E.count(h(s, v)) > 0
+
+
 # cts.expand() is called by tree_search.expand(), which sets the defaults for
 # all parameters.
 def expand(object T, *, object roadmap,
@@ -159,211 +140,282 @@ def expand(object T, *, object roadmap,
            int    max_size,
            double alpha,
            double lam,
-           double K):
+           double K,
+           int    weight_function,
+           int    score_function,
+           int    path_selection):
+
+    cdef int step, i, j, u, v, w
 
     cdef object G = roadmap
-
-    cdef EdgeDataMap D          = EdgeDataMap(G, 'd')
-    cdef EdgeDataMap Vis_faces  = EdgeDataMap(G, 'vis_faces')
-
-    cdef int step, i, j, u, v, w, s_u, s_v
-    cdef list path, path_s
-    cdef vector[int]* unvisited_u
-    cdef int root = 0;
+    cdef int F = T.nodes[T.root]['seen'].shape[0]
     cdef int N = len(T)
-    cdef int next_label = N
+
+    assert 2*sizeof(int) <= sizeof(long)
+    cdef vector[int] intvec
+    cdef hashmap[long, double] D
+    cdef hashmap[long, unsigned char [::1]] Vis_faces
+    cdef hashmap[int, int_list] G_adj
+
+    cdef unsigned char [::1] vis
+
+    D.reserve(len(G.edges))
+    Vis_faces.reserve(len(G.edges))
+    G_adj.reserve(len(G))
+
+    for i, adj in G._adj.items():
+        G_adj[i] = adj
+        for j, dd_ij in adj.items():
+            vis = dd_ij['vis_faces']
+            assert vis.shape[0] == F
+            D[h(i, j)]         = D[h(j, i)]         = dd_ij['d']
+            Vis_faces[h(i, j)] = Vis_faces[h(j, i)] = vis
+            assert (i, j) in G.edges
+
+    cdef vector[int] path_T
+    cdef vector[int] path_G
+    cdef int root = 0
 
     assert T.root == root
 
-    cdef    int [::1] S       = np.empty(N + steps, dtype=np.int32)
-    cdef double [::1] Score   = np.empty(N + steps, dtype=np.float64)
-    cdef double [::1] Dist    = np.empty(N + steps, dtype=np.float64)
-    cdef    int [::1] Depth   = np.empty(N + steps, dtype=np.int32)
-    cdef    int [::1] N_child = np.empty(N + steps, dtype=np.int32)
-    #cdef NodeDataMap Score      = NodeDataMap(T, 'score')
-    #cdef NodeDataMap Dist       = NodeDataMap(T, 'dist')
-    #cdef NodeDataMap Depth      = NodeDataMap(T, 'depth')
-    #cdef NodeDataMap N_child    = NodeDataMap(T, 'n_child')
-    #cdef dict Unvisited = {}
-    cdef dict Seen      = {}
+    #cdef    int [::1] S       = np.empty(N + steps, dtype=np.intc)
+    #cdef double [::1] Score   = np.empty(N + steps, dtype=np.float64)
+    #cdef double [::1] Dist    = np.empty(N + steps, dtype=np.float64)
+    #cdef    int [::1] Depth   = np.empty(N + steps, dtype=np.intc)
+    #cdef    int [::1] N_child = np.empty(N + steps, dtype=np.intc)
+    cdef unsigned char [:, ::1] Seen = np.empty((N + steps, F), dtype=np.bool)
 
-    cdef hashmap[int, vector[int]] Unvisited
+    #cdef hashmap[int, int_list] Unvisited
+    cdef vector[NodeT] Node
+
+    cdef hashmap[int, int_list] T_succ
+
+    Node.resize(N)
+    Node.reserve(N + steps)
+
+    T_succ.reserve(N + steps)
 
     for i in range(N):
-        dd         = T.nodes[i]
-        S[i]       = dd['s']
-        Seen[i]    = dd['seen']
-        Score[i]   = dd['score']
-        Dist[i]    = dd['dist']
-        Depth[i]   = dd['depth']
-        N_child[i] = dd['n_child']
+        T_succ[i] = T.succ[i]
+        neighbors_i = set(G.adj[T.nodes[i]['s']])
+        visited_i = {T.nodes[j]['s'] for j in T.succ[i]}
+        dd = T.nodes[i]
+        vis     = dd['seen']
+        Seen[i] = vis
+        Node[i] = NodeT(s=dd['s'], score=dd['score'], dist=dd['dist'],
+                        depth=dd['depth'], n_child=dd['n_child'], skip=False,
+                        unvisited=(neighbors_i - visited_i))
 
-    log.info('computing weights')
+    log.debug('computing weights')
 
     face_vis   = roadmap.graph['vis_faces']
     face_covis = roadmap.graph['covis_faces']
     face_area  = roadmap.graph['area_faces']
 
-    vis_unseen = face_vis & ~Seen[root]
+    vis_unseen = face_vis & ~np.asarray(Seen[root])
 
     # Compute face covisibility area, excluding seen faces. We do this at a
-    # smaller length scale because of integer mathematics. Do not change to
-    # floats, it will waste vast amounts of memory.
-    face_degree = face_covis.dot((1e5*face_area*vis_unseen).astype(np.uint32))/1e5
-    face_degree[~face_vis] = 0
+    # smaller length scale because of integer mathematics.
+    covis_area = np.empty(F, dtype=np.float)
+    log.debug('computing covis area')
+    if weight_function == WF_OURS:
+        compute_covis_area(face_covis,
+                           vis_unseen,
+                           face_area,
+                           covis_area)
+    elif weight_function == WF_UNIFORM:
+        covis_area[:] = 0.0
+    else:
+        raise ValueError(f'weight_function={weight_function} invalid')
 
-    #for (i,) in zip(*np.nonzero(face_vis)):
-    #    assert (face_degree[i] == np.dot(face_covis[i], vis_unseen)), f'{i}: {face_degree[i]}'
-
+    log.debug('computing face score')
     # Clip to 300 as a 64-bit float has a minimum exponent of 2^-1023 ~ 1e-308.
-    face_score = K*np.exp(-alpha*(face_degree.clip(0, 200)))
-    #face_score[face_degree < min_faces] = 1e-16
-    face_score[~vis_unseen]             = K
+    face_score = K*np.exp(-alpha*(covis_area.clip(0, 200)))
+    #face_score[~vis_unseen]             = K
 
+    log.debug('updating face colors')
     gui.update_face_hsv(hues=0.8*(1 - (-np.log(face_score/K)/alpha)/200), layer='score')
-    #gui.update_face_hsv(hues=0.8/face_degree.max()*face_degree)
+    #gui.update_face_hsv(hues=0.8/covis_area.max()*covis_area)
 
     log.info('  face_area: %s', statstr(face_area[vis_unseen]))
-    log.info('face_degree: %s', statstr(face_degree[vis_unseen]))
+    log.info(' covis_area: %s', statstr(covis_area[vis_unseen]))
     log.info(' face_score: %s', statstr(face_score[vis_unseen]))
-    log.info('          d: %s', statstr(list(D.values())))
+    #log.info('          d: %s', statstr(list(D.values())))
 
     log.info('expanding tree %d steps (initial size: %d, max size: %d)',
              steps, len(T), max_size)
 
-    cdef int    best_node  = T.graph['best_node']
-    cdef double best_score = T.graph['best_score']
-    cdef dict Gadj = G._adj
-    cdef dict Tadj = T._adj
-    cdef object N_child_get = N_child.__getitem__
-    cdef double score_u, score_v, gain_v, distfac_v, dist_u, dist_v
-    cdef double dist_root = Dist[root]
+    cdef NodeT *node_u
+    cdef NodeT *node_v
+    cdef NodeT *node_w
+    cdef NodeT *node_root = &Node[root]
+
+    cdef int         best_node   = root
+    cdef vector[int] best_path_T = [root]
+    cdef vector[int] best_path_G = [node_root.s]
+    cdef double      best_score  = node_root.score
+    cdef double gain_v
     cdef double [::1] face_score_vw = face_score;
 
-    cdef int n_recurred = 0, n_inserted = 0
+    # For PS_BFS, set of visited _EDGES_.
+    cdef unordered_set[long] visited
+    cdef NodeT node = NodeT(0, 0, 0, False, 0.0, 0.0, int_list())
+
+    cdef int_list_iterator it
+
+    assert node_root.dist == 0.0
 
     for step in range(steps):
 
-        ## SELECTION: find an unexplored branching point in the tree. Result is
-        ## the chosen next state S[v], and its path.
+      with nogil:
 
-        path, u = [], root
-        path_s = []
+        # Find a leaf.
+        u = root
+        path_T.clear()
+        path_G.clear()
 
-        # This loop generates a path = [..., u], and a successor state s_v of
+        # This loop generates a path_T = [..., u], and a successor state s_v of
         # s_u according to G.
-        for j in range(max_depth):
+        while not node_root.skip:
 
-            s_u = S[u]
-            path.append(u)
-            path_s.append(s_u)
+            node_u = &Node[u]
+            path_T.push_back(u)
+            path_G.push_back(node_u.s)
 
-            #if u not in Unvisited:
-            if Unvisited.find(u) == Unvisited.end():
-                Unvisited[u] = list(Gadj[s_u])
-                unvisited_u = &Unvisited[u]
-            else:
-                unvisited_u = &Unvisited[u]
+            #print(path_T, path_G)
 
-            if not unvisited_u.empty():
-                # The tree node has unvisited neighboring states, let s_v be
-                # one of them.
-                s_v = unvisited_u.back()
-                unvisited_u.pop_back()
+            if T_succ.find(u) == T_succ.end():
+                node_u.unvisited = G_adj[node_u.s]
+
+            if path_selection == PS_BFS:
+              node_u.unvisited.remove_if(EdgeExistsPredicate(visited, node_u.s))
+              #node_u.unvisited.erase(remove_if(node_u.unvisited.begin(),
+              #                                 node_u.unvisited.end(),
+              #                                 EdgeExistsPredicate(visited, node_u.s)),
+              #                       node_u.unvisited.end())
+
+            if not node_u.unvisited.empty():
+                # The tree node has unvisited neighboring states, create a new
+                # node whose state is one of them.
+                v = Node.size()
+                Node.push_back(node)
+                node_v   = &Node[v]
+                node_v.s = node_u.unvisited.front()
+                node_u.unvisited.pop_front()
+                T_succ[u].push_front(v)
+                if path_selection == PS_BFS:
+                    visited.insert(h(node_u.s, node_v.s))
+                    visited.insert(h(node_v.s, node_u.s))
+                #print('insert', f'{v} (s={node_v.s})')
                 break
 
-            nbrs = list(Tadj[u])
-            if not nbrs:
-                raise RuntimeError('node is leaf and no neighbor states')
-                v = u
-                u = path[-1]
-                s_v = S[v]
-                s_u = S[u]
-                # Set a really high N_child so it doesn't get visited again
-                N_child[u] += 100000
-                break
+            # Find the least visited successor of u in T. This results in
+            # BFS-like behavior.
+            with cython.boundscheck(False), cython.wraparound(False):
+                v      = u
+                node_v = &Node[v]
+                for w in T_succ[u]:
+                    node_w = &Node[w]
+                    #print(' ', f'(node_w.n_child := {node_w.n_child}) < (node_v.n_child := {node_v.n_child})')
+                    if not node_w.skip and node_w.n_child < node_v.n_child:
+                        v      = w
+                        node_v = &Node[v]
+
+            if v == u:
+                # u has no unvisited next states in G, and all its successors
+                # in T are unvisitable. Mark u as unvisitable too.
+                node_u.skip = True
+
+                # Undo the two push_back()s at the beginning of this iteration
+                path_T.pop_back()
+                path_G.pop_back()
+
+                # Test if empty in case we marked the root unvisitable.
+                if not path_T.empty():
+                    # Take the last state in the path
+                    u = path_T.back()
+
+                    # Undo its push_back()s too, as they will be on top
+                    path_T.pop_back()
+                    path_G.pop_back()
+
             else:
-                u = min(nbrs, key=N_child_get)
+                # We found a successor state v of u, continue path from v.
+                u = v
+
         else:
-            raise RuntimeError('ran out of attempts')
+          with gil:
+            # If we get here, the root is marked skip. The only valid reason
+            # for this to happen is that we must have visited every edge.
+            missed = {(u, v) for (u, v) in G.edges if visited.count(h(u, v)) == 0}
+            if missed:
+                log.error('internal inconsistency detected! root node marked '
+                          'skip before visiting all edges. missed edges: %s',
+                          missed)
+            break
 
-        score_u = Score[u]
+        # Set inserted node v's attributes
+        node_v = &Node[v]
+        node_v.dist  = node_u.dist + D[h(node_u.s, node_v.s)]
+        node_v.depth = node_u.depth + 1
 
-        #if any(score_u <= Score[w_] for (w, w_) in pairwise(path) if s_uv == (S[w], S[w_])):
-        if recurred(Score, path, path_s, s_u, score_u):
-             n_recurred += 1
-             #continue
-        n_inserted += 1
+        gain_v = propagate(face_score_vw, Seen[u], Vis_faces[h(node_u.s, node_v.s)], Seen[v])
 
-        # EXPANSION: add new node to search tree
-        v = next_label
-        next_label += 1
-        S[v] = s_v
-        T.add_node(v)
-        T.add_edge(u, v)
+        if score_function == SF_OURS:
+            node_v.score = node_u.score + gain_v * exp(-lam*node_v.dist)
+        elif score_function == SF_GN:
+            node_v.score = (node_u.score * node_u.dist + gain_v) / node_v.dist
 
-        seen_v  = np.empty(face_score.shape, dtype=bool)
-        gain_v  = _propagate(face_score_vw, Seen[u], Vis_faces[s_u, s_v], seen_v)
-        Seen[v] = seen_v
-
-        dist_u = Dist[u]
-        dist_v = Dist[v] = dist_u + D[s_u, s_v]
-
-        Depth[v] = <int>Depth[u] + 1
-
-        # SIMULATION: estimate the reward from this new state
-        distfac_v = exp(lam*(dist_root - dist_v))
-        score_v   = Score[v] = score_u + gain_v * distfac_v
+        for w in path_T:
+            Node[w].n_child += 1
 
         # Strict inequality ensures that if all nodes are equal (i.e. if no new
         # faces were found), we return the root node.
-        if score_v > best_score:
-            best_score = score_v
+        if best_score < node_v.score:
+            best_score = node_v.score
+            best_path_T = path_T
+            best_path_T.push_back(v)
+            best_path_G = path_G
+            best_path_G.push_back(node_v.s)
             best_node = v
 
-        # PROPAGATION: bubble the reward up the tree
-        N_child[v] = 0
-        for w in path:
-            N_child[w] = <int>N_child[w] + 1
-
-        if N_child[root] >= max_size:
+        if node_root.n_child >= max_size:
             break
 
         if step == 0 or ((step+1) % (steps//6)) == 0:
-            best_path   = T.path(root, best_node)
-            best_path_s = [S[u] for u in best_path]
-            log.debug(f'{N_child[root]:5d} rollouts in {len(T):5d} nodes, score: {Score[best_node]:.5g}')
-            gui.hilight_roadmap_edges(G, pairwise(best_path_s))
-            gui.wait_draw()
+            with gil:
+                log.debug(f'{node_root.n_child:5d} rollouts in {Node.size():5d} nodes, score: {best_score:.5g}')
+                gui.hilight_roadmap_edges(G, pairwise(best_path_G))
+                gui.wait_draw()
 
-    if not any([np.any(Seen[v] & ~Seen[root]) for v in T]):
-        if best_node == root:
-            log.warn('did not find any unseen faces')
-        else:
-            log.warn('did not find any unseen faces (but best node is not root?)')
-            best_node, best_score = root, Score[root]
-    elif best_node == root:
-        log.warn('best node is root even though other nodes saw new faces')
-        #best_node = min(T, key=lambda v: G_dists[S[v]])
-        #best_score = scoref(best_node)
+    IF test_seen:
+        if not any([np.any(np.asarray(Seen[v]) & ~np.asarray(Seen[root])) for v in range(<int>Node.size())]):
+            if best_node == root:
+                log.warn('did not find any unseen faces')
+            else:
+                log.warn('did not find any unseen faces (but best node is not root?)')
+        elif best_node == root:
+            log.warn('best node is root even though other nodes saw new faces')
+            #best_node = min(T, key=lambda v: G_dists[S[v]])
+            #best_score = scoref(best_node)
 
-    T.graph['best_node']  = best_node
-    T.graph['best_score'] = best_score
+    T.graph['best_score']     = best_score
+    T.graph['best_path_T']    = list(best_path_T)
+    T.graph['best_path_G']    = list(best_path_G)
+    T.graph['best_node']      = best_node
+    T.graph['best_path_seen'] = np.asarray(Seen[best_node])
 
     log.info('run complete, stats follow')
-    log.info('inserted %d (%d recurrent paths)', n_inserted, n_recurred)
-    log.info('   dist: %s', statstr(list(Dist)))
-    log.info('  depth: %s', statstr(list(Depth)))
-    log.info('n_child: %s', statstr(list(N_child)))
-    log.info(' degree: %s', statstr(list(map(G.degree, G))))
-    log.info('balance: %s', statstr([(N_child[T.parent(v)]+1)/(N_child[v]+1) for v in T if v != root]))
-    log.info('  score: %s', statstr(list(Score)))
 
-    T.S       = S
-    T.Seen    = Seen
-    T.Score   = Score
-    T.Dist    = Dist
-    T.Depth   = Depth
-    T.N_child = N_child
+    log.info('  depth: %s', statstr([n.depth     for n in Node]))
+    log.info('   dist: %s', statstr([n.dist      for n in Node]))
+    log.info('n_child: %s', statstr([n.n_child   for n in Node]))
+    log.info('  score: %s', statstr([n.score     for n in Node]))
+    log.info(' degree: %s', statstr([p.second.size() for p in T_succ]))
+    #log.info('  depth: %s', statstr(list(Depth)))
+    #log.info('n_child: %s', statstr(list(N_child)))
+    #log.info(' degree: %s', statstr(list(map(G.degree, G))))
+    #log.info('balance: %s', statstr([(N_child[T.parent(v)]+1)/(N_child[v]+1) for v in T if v != root]))
+    #log.info('  score: %s', statstr(list(Score)))
 
     return T

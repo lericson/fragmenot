@@ -1,9 +1,9 @@
 -e git+file://${PWD}@98a067e97cb10b0ff3d1eaf5624d9acdf9ec37a1#egg=octomap_python
 -e git+file://${PWD}@dbfc08c8a34108f3fa5d9e22a5797e14ff52b3f8#egg=trimesh
 -e git+file://${PWD}@3606747d0177a71b243ff282f1e54dbbfc5246c6#egg=pyembree
+-e git+file://${PWD}@726d83c54a7216914112aa18863e41ba94789290#egg=cython
 autoprop==1.0.1
 cycler==0.10.0
-Cython==0.29.20
 debugtools==0.2.0
 decorator==4.4.2
 distro==1.5.0

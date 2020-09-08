@@ -191,12 +191,9 @@ def _update_edge_visibility(G, mesh, *, force=False, seen=None):
         vis_faces = G.graph['vis_faces']
 
     # Covisibility matrix. If M[i, j] != 0, then i is visible with j.
-    # 
-    # We store it as a 64-bit integer matrix since it is used in a matrix
-    # multiplication to compute covisibility degree, where it has to be.
     if 'covis_faces' not in G.graph:
         log.debug('pre-allocating covisibility matrix')
-        covis_faces = np.empty((N, N), dtype=np.uint32)
+        covis_faces = np.empty((N, N), dtype=np.bool)
         covis_faces[:, :] = False
     else:
         covis_faces = G.graph['covis_faces']
@@ -247,15 +244,16 @@ def _update_edge_visibility(G, mesh, *, force=False, seen=None):
 def update_edge_visibility(G, mesh, *, force=False, seen=None,
                            load_cache: cfg.param = True,
                            save_cache: cfg.param = True,
-                           cache_path: cfg.param = 'runs/cache'):
+                           cache_path: cfg.param = 'var/cache'):
     "Caching wrapper for _update_edge_visibility"
 
-    cache_file = path.join(cache_path, f'edge_vis_{graph_md5(G)}_{_sensor_directions.md5()}_{mesh.md5()}.npz')
+    cache_filename = f'edge_vis_{graph_md5(G)}_{_sensor_directions.md5()}_{mesh.md5()}.npz'
+    cache_pathname = path.join(cache_path, cache_filename)
 
-    if load_cache and path.exists(cache_file):
-        log.info('loading edge visibility from cache at %s', cache_file)
+    if load_cache and path.exists(cache_pathname):
+        log.info('loading edge visibility from cache at %s', cache_pathname)
         try:
-            d = np.load(cache_file, allow_pickle=True)
+            d = np.load(cache_pathname, allow_pickle=True)
             for uv, vis_uv, dists_uv in zip(d['edges'], d['vis_faces_edges'], d['dist_faces_edges']):
                 G.edges[uv]['vis_faces']  = vis_uv
                 G.edges[uv]['dist_faces'] = dists_uv
@@ -273,17 +271,17 @@ def update_edge_visibility(G, mesh, *, force=False, seen=None,
     _update_edge_visibility(G, mesh, force=force, seen=seen)
 
     if save_cache:
-        log.info('saving edge visibility to %s', cache_file)
+        log.info('saving edge visibility to %s', cache_pathname)
         edges = np.array(G.edges, dtype=object)
         vis_faces_edges  = np.array([G.edges[uv]['vis_faces']  for uv in edges])
         dist_faces_edges = np.array([G.edges[uv]['dist_faces'] for uv in edges])
-        makedirs(path.dirname(cache_file), exist_ok=True)
+        makedirs(path.dirname(cache_pathname), exist_ok=True)
         d = dict(edges=edges,
                  vis_faces_edges=vis_faces_edges,
                  dist_faces_edges=dist_faces_edges,
                  vis_faces=G.graph['vis_faces'],
                  covis_faces=G.graph['covis_faces'])
-        np.savez_compressed(cache_file, **d)
+        np.savez_compressed(cache_pathname, **d)
 
 
 def update_vertex_visibility(G, mesh, *, root=None, seen=None):

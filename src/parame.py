@@ -49,7 +49,7 @@ class Module():
             return self.file_config[name]
         raise KeyError(name)
 
-    def get(self, name, default):
+    def get(self, name, default=None):
         envvar = format_envvar(self.name, name)
         if envvar in _environ:
             return yaml.safe_load(_environ[envvar])

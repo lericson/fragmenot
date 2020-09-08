@@ -74,12 +74,12 @@ parame:
         world:
             resolution:   0.8
         sensors:
-            radius:       100.0
+            radius:       4.0
         prm:
             max_dist:     2.0
         prevision:
             max_distance: 100.0
         tree_search:
-            steps:        12000
+            steps:        60000
         exploration:
             close_on_finish: false

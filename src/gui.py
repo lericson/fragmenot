@@ -231,7 +231,8 @@ class SceneViewer(trimesh.viewer.SceneViewer):
             _c.follow = not _c.follow
             self.show_message(f'Following: {_c.follow}', key='follow')
         else:
-            super().on_key_press(sym, mods)
+            with self.lock:
+                super().on_key_press(sym, mods)
 
     def _update_hud(self):
         super()._update_hud()
@@ -286,8 +287,9 @@ keyboard shortcuts:
 
 @parame.configurable
 def init(envmesh, title=None, *,
-         follow: cfg.param = False,
-         vsync:  cfg.param = True):
+         follow:    cfg.param = False,
+         vsync:     cfg.param = True,
+         minimized: cfg.param = False):
 
     _c.envmesh = envmesh
     _c.scene   = make_scene(mesh=envmesh)
@@ -299,6 +301,9 @@ def init(envmesh, title=None, *,
 
     update_vis_faces()
     activate_layer('visible')
+
+    if minimized:
+        _c.viewer.minimize()
 
     return _c
 
