@@ -62,7 +62,7 @@ cdef extern from "<list>" namespace "std" nogil:
         reverse_iterator rbegin()
         const_reverse_iterator const_rbegin "rbegin"()
         void remove(T&)
-        #void remove_if(UnPred)
+        void remove_if[Predicate](Predicate)
         reverse_iterator rend()
         const_reverse_iterator const_rend "rend"()
         void resize(size_t, T&)
