@@ -75,7 +75,6 @@ def statstr(a):
 
 @parame.configurable
 def expand(T, *, roadmap,
-           max_depth:      cfg.param = 50,
            steps:          cfg.param = 15000,
            max_size:       cfg.param = 2.00,
            alpha:          cfg.param = 1e-1,
@@ -92,7 +91,7 @@ def expand(T, *, roadmap,
     score_function  = cts.score_functions[score_function]
     path_selection  = cts.path_selections[path_selection]
 
-    return cts.expand(T, roadmap=roadmap, max_depth=max_depth, steps=steps,
+    return cts.expand(T, roadmap=roadmap, steps=steps,
                       max_size=max_size, alpha=alpha, lam=lam, K=K,
                       score_function=score_function,
                       weight_function=weight_function,

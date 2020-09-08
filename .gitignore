@@ -1,5 +1,4 @@
 /var
 /env
-/src/cts.cpp
 /src/cts.*.so
 *.egg-info

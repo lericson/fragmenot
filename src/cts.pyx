@@ -1,5 +1,6 @@
-# distutils: language = c++
-# cython: language_level = 3
+# distutils: language=c++
+# distutils: define_macros=NPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION
+# cython: language_level=3, warn.unused_result=True, warn.unused_arg=True
 "Plan a path for exploration in a state graph"
 
 import sys
@@ -121,10 +122,11 @@ cdef inline long h(int a, int b) nogil:
 
 
 cdef cppclass EdgeExistsPredicate:
-    unordered_set[long] *E
+    const unordered_set[long] *E
     int s
 
     EdgeExistsPredicate(unordered_set[long] &E, int s) nogil:
+        E  # Warns otherwise.
         this.E = &E
         this.s = s
 
@@ -135,7 +137,6 @@ cdef cppclass EdgeExistsPredicate:
 # cts.expand() is called by tree_search.expand(), which sets the defaults for
 # all parameters.
 def expand(object T, *, object roadmap,
-           int    max_depth,
            int    steps,
            int    max_size,
            double alpha,

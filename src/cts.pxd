@@ -1,3 +1,5 @@
+# distutils: language=c++
+# cython: language_level=3, warn.unused_result=True, warn.unused_arg=True
 
 cdef extern from "<algorithm>" namespace "std" nogil:
     OutputIt set_difference[InputIt1, InputIt2, OutputIt](InputIt1 first1, InputIt1 last1,

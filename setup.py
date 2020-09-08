@@ -7,5 +7,7 @@ setup(
     name='experiment',
     version='0.1',
     package_dir={'': 'src'},
-    ext_modules=cythonize([ext_cts])
+    ext_modules=cythonize([ext_cts], build_dir='./var/build'),
+    options={'build_ext': {'build_lib':  './var/build',
+                           'build_temp': ''}}
 )
