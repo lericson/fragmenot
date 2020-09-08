@@ -69,6 +69,12 @@ parame:
     pv800: {prevision: {max_distance:   8.00}}
     pvinf: {prevision: {max_distance: 100.00}}
 
+    ours: {}
+    gn: {tree_search: {score_function: gn}}
+    bfs: {tree_search: {path_selection: bfs}}
+    uniform: {tree_search: {weight_function: uniform}}
+    nojump: {prm: {max_degree_jump: 0}}
+
     # This configuration loads pretty fast
     test:
         world:

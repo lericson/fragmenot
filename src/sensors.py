@@ -244,7 +244,7 @@ def _update_edge_visibility(G, mesh, *, force=False, seen=None):
 def update_edge_visibility(G, mesh, *, force=False, seen=None,
                            load_cache: cfg.param = True,
                            save_cache: cfg.param = True,
-                           cache_path: cfg.param = 'var/cache'):
+                           cache_path: cfg.param = './var/cache'):
     "Caching wrapper for _update_edge_visibility"
 
     cache_filename = f'edge_vis_{graph_md5(G)}_{_sensor_directions.md5()}_{mesh.md5()}.npz'

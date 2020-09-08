@@ -22,3 +22,28 @@ Run the demo:
 
     ./env/bin/python3 setup.py develop
     ./env/bin/python3 src/__main__.py
+
+## Batch running
+
+Most of what we do with this is to collect statistics. To make running batches
+easier, there is a system with the very funny name "batsh".
+
+How to use: start a tmux, then the batsh-queue program.
+
+    ./scripts/batsh-cmds | ./scripts/batsh-queue
+
+You may run batsh-cmds to inspect which commands will be run, one per line of output.
+
+Once the queue program is running, open new tmux tabs and start a worker in each:
+
+    ./scripts/batsh-worker
+
+This has the advantage that you can cycle through the current runs in tmux,
+with full terminal interactivity. Batsh is the future.
+
+## Plotting
+
+Use
+    
+    ./scripts/plot_runs.py ./var/runs/runs_foo/*
+

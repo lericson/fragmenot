@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# batsh queuer
+
+log() {
+    printf "[%(%Y-%m-%d %H:%M:%S)T] %s\n" -1 "$@"
+}
+
+IFS=$'\n' 
+
+readarray -t commands
+
+log "read ${#commands[@]} commands"
+
+cmd_fifo=./var/batsh_cmd.fifo
+rdy_fifo=./var/batsh_rdy.fifo
+
+[[ ! -e "$cmd_fifo" ]] && mkfifo "$cmd_fifo"
+[[ ! -e "$rdy_fifo" ]] && mkfifo "$rdy_fifo"
+
+nready=0
+ncomplete=0
+n=${n:-0}
+
+for (( ; n == 0 || ncomplete < n; )); do
+  log "$ncomplete done (n=$n, nready=$nready)"
+  for (( ; 0 < nready; ncomplete++ )); do
+    cmd="${commands[ncomplete % ${#commands[@]}]}"
+    printf '%s\n' "$cmd" >>"$cmd_fifo"
+    (( nready-- ))
+  done
+  read -r rdy <"$rdy_fifo"
+  (( ++nready ))
+done

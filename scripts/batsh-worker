@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# batsh worker
+
+log() {
+    printf "[%(%Y-%m-%d %H:%M:%S)T] %s\n" -1 "$*"
+}
+
+oops() {
+    log "$*" >&2
+    exit 1
+}
+
+IFS=$'\n' 
+
+cmd_fifo=./var/batsh_cmd.fifo
+rdy_fifo=./var/batsh_rdy.fifo
+
+[[ ! -e "$cmd_fifo" ]] && oops "$cmd_fifo does not exist. did you start batsh-queue?"
+[[ ! -e "$rdy_fifo" ]] && oops "$rdy_fifo does not exist. did you start batsh-queue?"
+
+while true; do
+  echo $$ >>"$rdy_fifo"
+  read -r cmd <"$cmd_fifo"
+  log "running $cmd"
+  eval "$cmd"
+done

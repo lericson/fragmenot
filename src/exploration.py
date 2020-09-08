@@ -150,10 +150,12 @@ def step(state):
 
 @parame.configurable
 def output_path(*args, create=True,
-                output_dir: cfg.param = f'var/runs/run_{getpid()}'):
+                runs_dir:   cfg.param = './var/runs',
+                output_dir: cfg.param = f'run_{getpid()}'):
+    output_path = path.join(runs_dir, output_dir)
     if create:
-        makedirs(output_dir, exist_ok=True)
-    return path.join(output_dir, *args)
+        makedirs(output_path, exist_ok=True)
+    return path.join(output_path, *args)
 
 
 @threadable

@@ -1,0 +1,17 @@
+#!/bin/bash
+
+python=${python:-./env/bin/python}
+script=${script:-./src/__main__.py}
+flags="GUI_MINIMIZED=true"
+rundir="EXPLORATION_RUNS_DIR=./var/runs_"
+jobs=(
+    #"$flags ${rundir}ours       PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",ours]       $python $script"
+    #"$flags ${rundir}gn         PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",gn]         $python $script"
+    #"$flags ${rundir}bfs        PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",bfs]        $python $script"
+    #"$flags ${rundir}bfs_gn     PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",bfs,gn]     $python $script"
+    #"$flags ${rundir}uniform    PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",uniform]    $python $script"
+    "$flags ${rundir}nojump      PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",nojump]    $python $script"
+    #"$flags ${rundir}bfs_nojump PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",bfs,nojump] $python $script"
+)
+
+printf "%s\n" "${jobs[@]}";
