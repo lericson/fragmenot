@@ -59,12 +59,7 @@ def main():
             'octomap',
             ['octomap/octomap.pyx'],
             include_dirs=[
-                'src/octomap/octomap/include',
-                'src/octomap/dynamicEDT3D/include',
                 numpy.get_include(),
-            ],
-            library_dirs=[
-                'src/octomap/lib',
             ],
             libraries=[
                 'dynamicedt3d',
