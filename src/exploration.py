@@ -205,7 +205,7 @@ def run(*, octree, mesh, state=None,
 
         if not (state.completion < percent_complete/100):
             log.info('exploration complete!')
-            log.info('link: file://{path.abspath(output_path())}')
+            log.info('link: %s', f'file://{path.abspath(output_path())}')
             break
 
     if close_on_finish:

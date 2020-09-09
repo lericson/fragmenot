@@ -20,8 +20,8 @@ rdy_fifo=./var/batsh_rdy.fifo
 [[ ! -e "$rdy_fifo" ]] && oops "$rdy_fifo does not exist. did you start batsh-queue?"
 
 while true; do
-  echo $$ >>"$rdy_fifo"
-  read -r cmd <"$cmd_fifo"
+  echo $$ >>"$rdy_fifo" || exit
+  read -r cmd <"$cmd_fifo" || exit
   log "running $cmd"
-  eval "$cmd"
+  eval "$cmd" || exit
 done

@@ -1,22 +1,38 @@
 #!/usr/bin/env python3
 
 import sys
-from glob import glob
 from os import path
+from glob import glob
+from typing import Any, Optional
+from dataclasses import dataclass
 from collections import namedtuple
 
 import yaml
+import trimesh
 import numpy as np
+import networkx as nx
 from matplotlib import pyplot as plt
+from nptyping import NDArray
 
 import parame
 
 
 cfg = parame.Module('plot')
-Desc = namedtuple('Desc', 'run d x y label')
 
-runs = sys.argv[1:]
-Ds   = {}
+
+@dataclass
+class Desc():
+    pathname:   str
+    label:      str
+    d:          float
+    x:          NDArray[(Any,), np.float]
+    y:          NDArray[(Any,), np.float]
+
+    seen:       NDArray[(Any, Any), bool]     = None
+    holes:      NDArray[(Any,),     np.float] = None
+    faces:      NDArray[(Any, 3),   np.int]   = None
+    vertices:   NDArray[(Any, 3),   np.float] = None
+    mesh:       trimesh.Trimesh               = None
 
 
 def check(x, y):
@@ -28,9 +44,26 @@ def check(x, y):
     assert np.all(np.diff(y[:-1]) >= 0)
 
 
-def load(run):
+def bfs(adj, source, *, seen):
+    "Allows giving an initial seen, and reusing it"
+    nextlevel = {source}
+    while nextlevel:
+        thislevel = nextlevel - seen
+        nextlevel = set()
+        for v in thislevel:
+            yield v
+            nextlevel.update(adj[v])
+        seen.update(thislevel)
 
-    with open(path.join(run, 'environ.yaml')) as f:
+
+def components(G, *, seen=None):
+    seen = seen if seen is not None else set()
+    return filter(None, (list(bfs(G.adj, v, seen=seen)) for v in G if v not in seen))
+
+
+def load(pathname):
+
+    with open(path.join(pathname, 'environ.yaml')) as f:
         env = yaml.safe_load(f)
 
     parame._environ  = env['environ']
@@ -42,26 +75,39 @@ def load(run):
 
     d = parame.Module('prevision')['max_distance']
 
-    print(f'p={p}', end=' ')
-    print(f'd={d:.2f}', end=' ')
+    mesh = trimesh.Trimesh(**np.load(path.join(pathname, 'mesh.npz')))
 
-    cache_filename = path.join(run, '.plot_cache.npz')
+    print(f'p={p}', end=' ', flush=True)
+    print(f'd={d:.2f}', end=' ', flush=True)
 
-    if not path.exists(cache_filename):
-        S = sorted(glob(path.join(run, 'state?????.npz')))
+    cache_filename = '.plot_cache.npz'
+    cache_pathname = path.join(pathname, cache_filename)
+
+    if not path.exists(cache_pathname):
+        S = sorted(glob(path.join(pathname, 'state?????.npz')))
         assert 10 < len(S) < 2000, f'10 < (len(S) := {len(S)}) < 2000'
         S = [dict(np.load(fn)) for fn in S]
-        #x = np.array([0.0] + [s['completion'] for s in S] + [1.0])
-        #y = np.array([0.0] + [s['distance']   for s in S] + [S[-1]['distance']+1e-8])
-        x = np.array([s['completion'] for s in S])
-        y = np.array([s['distance']   for s in S])
+        x    = np.array([s['completion'] for s in S])
+        y    = np.array([s['distance']   for s in S])
+        seen = np.array([s['seen_faces'] for s in S])
+
+        holes = []
+        G = nx.Graph(list(mesh.face_adjacency))
+        for i, seen_i in enumerate(seen):
+            seen_indices_i, = np.nonzero(seen[i])
+            holes.append([np.sum(mesh.area_faces[comp]) for comp in components(G, seen=set(seen_indices_i))])
+        holes = np.asarray(holes)
+
         check(x, y)
-        np.savez(cache_filename, x=x, y=y)
+        np.savez(cache_pathname, x=x, y=y, seen=seen, holes=holes)
         print('recalculated', end=' ')
 
     else:
-        dd = np.load(cache_filename)
-        x, y = np.array(dd['x']), np.array(dd['y'])
+        dd    = np.load(cache_pathname)
+        x     = np.array(dd['x'])
+        y     = np.array(dd['y'])
+        seen  = np.array(dd['seen'])
+        holes = np.array(dd['holes'])
         check(x, y)
         print('cache', end=' ')
 
@@ -75,26 +121,32 @@ def load(run):
     print(f'n={x.shape[0]}', end=' ')
     print()
 
-    return d, x, y
+    desc = Desc(pathname=pathname, label=f'$d={d:.2f}$', d=d, x=x, y=y,
+                seen=seen, holes=holes, mesh=mesh)
+
+    return desc
 
 
 @parame.configurable
-def main(*,
-         type:        cfg.param = 'line',
+def main(*, pathnames=sys.argv[1:],
+         style:       cfg.param = 'line',
          skip_failed: cfg.param = True):
 
-    for i, run in enumerate(runs):
-        print(f'loading {i+1:3d} / {len(runs)}: {run} ', end='')
+    Ds = {}
+
+    for i, pathname in enumerate(pathnames):
+        print(f'loading {i+1:3d} / {len(pathnames)}: {pathname} ', end='')
         try:
-            d, x, y = load(run)
+            desc = load(pathname)
         except Exception as e:
             if not skip_failed:
                 raise
             else:
                 print(f'failed: {e}')
                 continue
-        desc = Desc(run, d, x, y, f'$d={d:.2f}$')
-        Ds.setdefault(d, []).append(desc)
+        Ds.setdefault(desc.d, []).append(desc)
+
+    Ds = {d: Ds[d] for d in sorted(Ds)}
 
     from scipy.interpolate import interp1d
 
@@ -107,20 +159,18 @@ def main(*,
         plt.tight_layout()
         plt.show()
 
-    keys = sorted(Ds)
-
     if False: # plot histograms
         for completion in (.5, .6, .7, .75, .8, .85, .9, .95, .96, .97, .975, .98, .985, .9875, .99, .998):
-            Ys = [[interp1d(ds.x, ds.y)(completion) for ds in Ds[d]] for d in keys]
-            plt.bar(np.arange(len(Ds)), [np.mean(ys) for ys in Ys], tick_label=keys, yerr=[np.std(ys) for ys in Ys])
+            Ys = [[interp1d(ds.x, ds.y)(completion) for ds in Ds[d]] for d in Ds]
+            plt.bar(np.arange(len(Ds)), [np.mean(ys) for ys in Ys], tick_label=list(Ds), yerr=[np.std(ys) for ys in Ys])
             plt.title(f'{completion*100:.1f}% completion by distance travelled')
             plt.xlabel('Prevision distance $d / m$')
             plt.ylabel('Distance travelled $s / m$')
             plt.savefig(f'completion{completion*1000:.0f}.png')
             plt.show()
 
-            #Ys = [[ds.y[-1] for ds in Ds[d]] for d in keys]
-            #plt.bar(np.arange(len(Ds)), [np.mean(ys) for ys in Ys], tick_label=keys, yerr=[np.std(ys) for ys in Ys])
+            #Ys = [[ds.y[-1] for ds in Ds[d]] for d in Ds]
+            #plt.bar(np.arange(len(Ds)), [np.mean(ys) for ys in Ys], tick_label=list(Ds), yerr=[np.std(ys) for ys in Ys])
             #plt.title('100% completion by distance travelled')
             #plt.xlabel('Prevision distance $d / m$')
             #plt.ylabel('Distance travelled $s / m$')
@@ -135,7 +185,7 @@ def main(*,
         sigma_FX = np.std(FX, axis=0)
         dstr     = f'{d:.2f}' if d < 50.0 else '\infty'
         label    = f'$d={dstr}, N={len(Ds[d])}$'
-        if type == 'line':
+        if style == 'line':
             ax = plt.gca()
             X = 100*(1 - X)
             ax.fill_between(X, mu_FX - sigma_FX, mu_FX + sigma_FX, color=f'C{i}', alpha=0.1)
@@ -148,13 +198,12 @@ def main(*,
             ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f'{x:.3g}%'))
             plt.xlabel('Unexplored surface area [%]')
             plt.ylabel('Distance travelled [m]')
-        elif type == 'polar':
+        elif style == 'polar':
             ax = plt.gca(polar=True)
             ax.plot(2*np.pi*X, mu_FX, label=label)
             ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f'{x/2/np.pi*100:.0f}%'))
-            
         else:
-            raise ValueError(type)
+            raise ValueError(style)
         #for j, ds in enumerate(Ds[d]):
         #    label = ds.label if j == 0 else None
         #    #plt.plot(FX[j], X, label=label, color=f'C{i}')
