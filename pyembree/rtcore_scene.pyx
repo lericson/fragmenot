@@ -3,8 +3,8 @@ cimport numpy as np
 import numpy as np
 import logging
 import numbers
-cimport rtcore as rtc
-cimport rtcore_ray as rtcr
+from . cimport rtcore as rtc
+from . cimport rtcore_ray as rtcr
 
 
 log = logging.getLogger('pyembree')

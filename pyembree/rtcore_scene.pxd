@@ -2,9 +2,8 @@
 
 cimport cython
 cimport numpy as np
-cimport rtcore as rtc
-cimport rtcore_ray as rtcr
-from rtcore_ray cimport RTCRayHit, RTCRayHit4, RTCRayHit8, RTCRayHit16, RTCRay, RTCRay4, RTCRay8, RTCRay16
+from . cimport rtcore as rtc
+from . cimport rtcore_ray as rtcr
 
 cdef extern from "embree3/rtcore_scene.h":
 
@@ -50,15 +49,15 @@ cdef extern from "embree3/rtcore_scene.h":
 
     void rtcInitIntersectContext(RTCIntersectContext* context) nogil
 
-    void rtcIntersect1(                    RTCScene scene, RTCIntersectContext* context, RTCRayHit*   rayhit) nogil
-    void rtcIntersect4( const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRayHit4*  rayhit) nogil
-    void rtcIntersect8( const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRayHit8*  rayhit) nogil
-    void rtcIntersect16(const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRayHit16* rayhit) nogil
+    void rtcIntersect1(                    RTCScene scene, RTCIntersectContext* context, rtcr.RTCRayHit*   rayhit) nogil
+    void rtcIntersect4( const void* valid, RTCScene scene, RTCIntersectContext* context, rtcr.RTCRayHit4*  rayhit) nogil
+    void rtcIntersect8( const void* valid, RTCScene scene, RTCIntersectContext* context, rtcr.RTCRayHit8*  rayhit) nogil
+    void rtcIntersect16(const void* valid, RTCScene scene, RTCIntersectContext* context, rtcr.RTCRayHit16* rayhit) nogil
 
-    void rtcOccluded1(                    RTCScene scene, RTCIntersectContext* context, RTCRay*   rayhit) nogil
-    void rtcOccluded4( const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRay4*  rayhit) nogil
-    void rtcOccluded8( const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRay8*  rayhit) nogil
-    void rtcOccluded16(const void* valid, RTCScene scene, RTCIntersectContext* context, RTCRay16* rayhit) nogil
+    void rtcOccluded1(                    RTCScene scene, RTCIntersectContext* context, rtcr.RTCRay*   rayhit) nogil
+    void rtcOccluded4( const void* valid, RTCScene scene, RTCIntersectContext* context, rtcr.RTCRay4*  rayhit) nogil
+    void rtcOccluded8( const void* valid, RTCScene scene, RTCIntersectContext* context, rtcr.RTCRay8*  rayhit) nogil
+    void rtcOccluded16(const void* valid, RTCScene scene, RTCIntersectContext* context, rtcr.RTCRay16* rayhit) nogil
 
     void rtcReleaseScene(RTCScene scene) nogil
 

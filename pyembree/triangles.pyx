@@ -1,9 +1,9 @@
 cimport numpy as np
-cimport rtcore as rtc
-cimport rtcore_ray as rtcr
-cimport rtcore_scene as rtcs
-cimport rtcore_geometry as rtcg
-from rtcore cimport Vertex, Triangle, Vec3f
+from . cimport rtcore as rtc
+from . cimport rtcore_ray as rtcr
+from . cimport rtcore_scene as rtcs
+from . cimport rtcore_geometry as rtcg
+from .rtcore cimport Vertex, Triangle, Vec3f
 from libc.stdlib cimport malloc, free
 
 ctypedef Vec3f (*renderPixelFunc)(float x, float y,
