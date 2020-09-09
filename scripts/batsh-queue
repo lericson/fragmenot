@@ -3,11 +3,26 @@
 # batsh queuer
 
 log() {
-    printf "[%(%Y-%m-%d %H:%M:%S)T] %s\n" -1 "$@"
+    printf "[%(%Y-%m-%d %H:%M:%S)T] %s\n" -1 "$*"
+}
+
+oops() {
+    printf "\x1b[31;1moops\x1b[0m: %s\n" "$*" >&2
+    exit 1
 }
 
 IFS=$'\n' 
 
+while getopts "n:" opt; do
+  case "$opt" in
+    n) n="$OPTARG";;
+    ?) exit 1
+  esac
+done
+
+[[ ! "$n" =~ ^[0-9]+$ ]] && oops "specify -n <maxjobs | 0>"
+
+log "reading commands from stdin"
 readarray -t commands
 
 log "read ${#commands[@]} commands:"
@@ -22,7 +37,6 @@ mkdir -p "$(dirname $cmd_fifo)" "$(dirname $rdy_fifo)"
 
 nready=0
 ncomplete=0
-n=${n:-0}
 
 for (( ; n == 0 || ncomplete < n; )); do
   log "$ncomplete done (n=$n, nready=$nready)"
