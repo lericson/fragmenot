@@ -17,12 +17,14 @@ def main():
 
     octree, mesh = world.load()
 
-    gui.init(mesh, title=exploration.output_path())
+    if gui.cfg.get('headless'):
+        exploration.run(octree=octree, mesh=mesh)
 
-    t = exploration.thread(octree=octree, mesh=mesh, daemon=True)
-    t.start()
-
-    gui.run()
+    else:
+        gui.init(mesh, title=exploration.output_path())
+        t = exploration.thread(octree=octree, mesh=mesh, daemon=True)
+        t.start()
+        gui.run()
 
 
 if __name__ == '__main__':

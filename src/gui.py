@@ -8,13 +8,20 @@ from colorsys import hsv_to_rgb
 import trimesh
 import trimesh.viewer
 import numpy as np
-from pyglet import gl, app
-from pyglet.window import key
 from networkx.utils import pairwise
 from trimesh.path.entities import Line as LineEntity
 from trimesh.transformations import translation_matrix
 
 import parame
+
+
+try:
+    import pyglet.gl
+    has_pyglet = True
+except BaseException as e:
+    from trimesh.exceptions import ExceptionModule
+    pyglet = ExceptionModule(e)
+    has_pyglet = False
 
 
 cfg = parame.Module(__name__)
@@ -44,8 +51,19 @@ _c = type('Context', (), {})()
 
 
 @parame.configurable
+def mock_when_headless(f, *,
+                       headless: cfg.param = has_pyglet):
+    "Decorator replaces function with a no-op when in headless mode."
+    if headless:
+        return lambda *a, **k: None
+    return f
+
+
+@mock_when_headless
+@parame.configurable
 def update_roadmap(roadmap, *,
                    show_jumps: cfg.param = False):
+
     path  = _c.roadmap_path
     lines = []
     verts = []
@@ -72,6 +90,7 @@ def update_roadmap(roadmap, *,
         path.vertices = np.array(verts)
 
 
+@mock_when_headless
 def reset_roadmap_edges(roadmap):
     for u, v, dd_uv in roadmap.edges.data():
 
@@ -87,6 +106,7 @@ def reset_roadmap_edges(roadmap):
             line_uv.color = color_edge_skip
 
 
+@mock_when_headless
 def hilight_roadmap_edges(roadmap, edges, reset=True):
     if reset:
         reset_roadmap_edges(roadmap)
@@ -117,6 +137,7 @@ def hilight_roadmap_edges(roadmap, edges, reset=True):
         assert dd_uv['_line'] in list(_c.roadmap_path.entities)
 
 
+@mock_when_headless
 def update_vis_faces(*, visible=None, aware=None, seen=None, hilight=None):
     if visible is None: visible = np.zeros(_c.envmesh.faces.shape[0], dtype=bool)
     if aware is None:   aware   = np.zeros_like(visible)
@@ -130,16 +151,19 @@ def update_vis_faces(*, visible=None, aware=None, seen=None, hilight=None):
     #_c.hl_faces_base_color = _c.envmesh.visual.face_colors.copy()
 
 
+@mock_when_headless
 def hilight_vis_faces(faces):
     #if _c.hl_faces_base_color is not None:
     #    _c.envmesh.visual.face_colors[:] = _c.hl_faces_base_color
     _c.layers['visible'][faces] = 255*color_envmesh_hl
 
 
+@mock_when_headless
 def update_face_hsv(*, layer, hues, saturation=1.0, value=1.0, alpha=1.0):
     _c.layers[layer][:] = 255*np.array([[*hsv_to_rgb(hue, saturation, value), alpha] for hue in hues])
 
 
+@mock_when_headless
 def activate_layer(layer):
     data                = _c.layers[layer].copy()
     _c.layers[_c.layer] = _c.layers[_c.layer].copy()
@@ -148,6 +172,7 @@ def activate_layer(layer):
     _c.layer            = layer
 
 
+@mock_when_headless
 def update_position(position):
     transform = translation_matrix(position - _c.sphere_position)
     _c.sphere_position = position
@@ -157,6 +182,7 @@ def update_position(position):
         _c.scene.camera_transform[...]         = _c.viewer.view['ball'].pose
 
 
+@mock_when_headless
 def update_trajectory(positions):
     v = range(len(positions))
     with _c.viewer.lock:
@@ -166,6 +192,7 @@ def update_trajectory(positions):
         path.colors   = [color_trajectory_edge]*len(path.entities)
 
 
+@mock_when_headless
 def wait_draw(timeout=1.0):
     _c.viewer._begin_draw.clear()
     if not _c.viewer._begin_draw.wait(timeout=timeout):
@@ -176,6 +203,7 @@ def wait_draw(timeout=1.0):
         log.warn('wait_draw timed out (end draw)')
 
 
+@mock_when_headless
 def save_screenshot(fn):
     log.info('saving screenshot: %s', fn)
     with _c.viewer._screenshot_lock:
@@ -184,6 +212,7 @@ def save_screenshot(fn):
         wait_draw(timeout=10.0)
 
 
+@mock_when_headless
 def show_message(*a, **k):
     _c.viewer.show_message(*a, **k)
 
@@ -202,7 +231,8 @@ def make_scene(*, mesh):
     return scene
 
 
-class SceneViewer(trimesh.viewer.SceneViewer):
+BaseSceneViewer = trimesh.viewer.SceneViewer if has_pyglet else object
+class SceneViewer(BaseSceneViewer):
     def init_gl(self):
         super().init_gl()
         self.lock = threading.Lock()
@@ -222,6 +252,7 @@ class SceneViewer(trimesh.viewer.SceneViewer):
             self._end_draw.set()
 
     def on_key_press(self, sym, mods):
+        from pyglet.window import key
         if sym == key.SPACE:
             layer_names = list(_c.layers)
             layer = (layer_names*2)[layer_names.index(_c.layer) + 1]
@@ -269,6 +300,7 @@ def make_viewer(scene, *,
     #viewer.reset_view(flags=dict(cull=True, grid=True, wireframe=True))
     viewer.reset_view(flags=dict(perspective=perspective))
 
+    from pyglet import gl
     gl.glLineWidth(line_width)
     gl.glPointSize(line_width)
 
@@ -285,6 +317,7 @@ keyboard shortcuts:
     return viewer
 
 
+@mock_when_headless
 @parame.configurable
 def init(envmesh, title=None, *,
          follow:    cfg.param = False,
@@ -308,5 +341,11 @@ def init(envmesh, title=None, *,
     return _c
 
 
-run = app.run
-close = app.exit
+if has_pyglet:
+    run   = pyglet.app.run
+    close = pyglet.app.exit
+else:
+    from trimesh.exceptions import closure
+    exc = object.__getattribute__(pyglet, 'exc')
+    run   = closure(exc)
+    close = closure(exc)
