@@ -4,7 +4,7 @@
 -e git+file://${PWD}@726d83c54a7216914112aa18863e41ba94789290#egg=cython
 autoprop==1.0.1
 cycler==0.10.0
-dataclasses==0.7
+dataclasses>=0.6
 debugtools==0.2.0
 decorator==4.4.2
 distro==1.5.0
