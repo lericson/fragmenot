@@ -12,15 +12,21 @@ Create a virtualenv:
 
     virtualenv --python=/usr/bin/python3 env
 
-Install dependencies (Ubuntu)
+Install dependencies
 
+    Ubuntu:
     apt-get install libspatialindex-dev
-    [You need embree 3.x.]
+    [You need to manually install Intel Embree 3.x., see https://embree.org/]
+
+    macOS:
+    brew install libspatialindex embree
+
+    All:
     ./env/bin/pip install -r requirements.txt
+    ./env/bin/python3 setup.py develop
 
 Run the demo:
 
-    ./env/bin/python3 setup.py develop
     ./env/bin/python3 src/__main__.py
 
 ## Batch running
