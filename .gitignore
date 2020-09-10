@@ -2,3 +2,4 @@
 /env
 /src/cts.*.so
 *.egg-info
+__pycache__
