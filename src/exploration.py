@@ -25,12 +25,11 @@ cfg = parame.Module(__name__)
 
 @dataclass(frozen=True)
 class State():
-    mesh: trimesh.Trimesh
-    position: NDArray[(Any, 3)]
+    mesh:       trimesh.Trimesh
     seen_faces: NDArray[Any, bool]
-    roadmap: nx.Graph
-    node: Any = None
-    trajectory: Optional[list] = None
+    roadmap:    nx.Graph
+    node:       Any
+    sequence:   Optional[list]
 
     @classmethod
     @parame.configurable
@@ -41,27 +40,34 @@ class State():
         roadmap = prm.new(mesh=mesh, octree=octree)
         prm.insert_random(roadmap, start)
         seen   |= np.all([vis for _, _, vis in roadmap.edges(start, data='vis_faces')], axis=0)
-        pos     = roadmap.nodes[start]['r']
-        return cls(mesh, pos, seen, roadmap, start, trajectory=[pos])
+        return cls(mesh, seen, roadmap, start, sequence=[start])
 
     @property
-    def distance(self):
-        if len(self.trajectory) < 2:
+    def trajectory(self) -> list:
+        return [self.roadmap.nodes[u]['r'] for u in self.sequence]
+
+    @property
+    def position(self) -> NDArray[3, np.float]:
+        return self.trajectory[-1]
+
+    @property
+    def distance(self) -> float:
+        if len(self.sequence) < 2:
             return 0.0
         return np.sum(np.linalg.norm(np.diff(self.trajectory, axis=0), axis=1))
 
     @property
-    def completion(self):
+    def completion(self) -> float:
         visible    = self.roadmap.graph['vis_faces']
         seen       = self.seen_faces
         area_faces = self.mesh.area_faces
         return np.sum(area_faces[seen]) / np.sum(area_faces[visible])
 
-    save_attrs = {'position', 'seen_faces', 'trajectory',
+    save_attrs = {'position', 'seen_faces', 'trajectory', 'sequence',
                   'distance', 'completion'}
 
     @property
-    def save_dict(self):
+    def save_dict(self) -> dict:
         return {attr: getattr(self, attr) for attr in self.save_attrs}
 
     def update_gui(self, *, update_vis_faces=True):
@@ -77,11 +83,12 @@ class State():
 def step(state):
 
     mesh    = state.mesh
-    pos     = state.position
     seen    = state.seen_faces
     roadmap = state.roadmap
     node    = state.node
-    traj    = state.trajectory
+    seq     = state.sequence
+
+    assert seq[-1] == node
 
     #if len(roadmap) < 2:
     #    rrt.extend(roadmap, octree=octree, bbox=bbox)
@@ -99,7 +106,7 @@ def step(state):
 
     prm.update_jumps(roadmap_, seen=seen, active={node})
 
-    roadmap_local = prevision.subgraph(roadmap_, mesh=mesh, seen_faces=seen, seen_states=traj)
+    roadmap_local = prevision.subgraph(roadmap_, mesh=mesh, seen_faces=seen, seen_states=seq)
 
     gui.update_roadmap(roadmap_local)
     gui.wait_draw()
@@ -113,7 +120,6 @@ def step(state):
     node_ = path[1]
 
     # Construct next state (hence the _ suffixes)
-    pos_       = roadmap_.nodes[node_]['r'].copy()
     seen_      = seen | roadmap_.edges[node, node_]['vis_faces']
     #seen_      = data_v['vis_faces'].copy()
     #roadmap_   = rrt.new(pos_) # NOTE should set root d = data_v['d']
@@ -121,18 +127,18 @@ def step(state):
     #roadmap_   = rrt.extract_path(roadmap, path[1:])
     #roadmap_   = rrt.new(pos_, d=data_v['d']) # NOTE should set root d = data_v['d']
 
-    rs = roadmap_.edges[node, node_]['rs']
-    rs = rs if np.allclose(rs[0], roadmap_.nodes[node]['r']) else rs[::-1]
-    traj_ = traj + rs
+    vs = roadmap_.edges[node, node_]['vs']
+    vs = vs if vs[0] == node else vs[::-1]
+    assert vs[0] == node and vs[-1] == node_
+    seq_ = seq + vs[1:]
 
-    del node, pos, seen, traj, state
+    del node, seen, seq, state
 
     state_ = State(mesh=mesh,
-                   position=pos_,
                    seen_faces=seen_,
                    roadmap=roadmap_,
                    node=node_,
-                   trajectory=traj_)
+                   sequence=seq_)
 
     state_.update_gui(update_vis_faces=False)
     gui.update_roadmap(roadmap_local)
@@ -142,7 +148,7 @@ def step(state):
                          seen=seen_,
                          hilight=vis_path & ~seen_)
 
-    log.info('new state %s: %s', node_, pos_)
+    log.info('new state %s: %s', state_.node, state_.position)
     log.info('explored %.2f%% of visible faces', 100*state_.completion)
 
     return state_
