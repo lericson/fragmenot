@@ -52,7 +52,7 @@ _c = type('Context', (), {})()
 
 @parame.configurable
 def mock_when_headless(f, *,
-                       headless: cfg.param = has_pyglet):
+                       headless: cfg.param = not has_pyglet):
     "Decorator replaces function with a no-op when in headless mode."
     if headless:
         return lambda *a, **k: None
@@ -348,4 +348,4 @@ else:
     from trimesh.exceptions import closure
     exc = object.__getattribute__(pyglet, 'exc')
     run   = closure(exc)
-    close = closure(exc)
+    close = lambda: None

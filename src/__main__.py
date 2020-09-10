@@ -17,7 +17,7 @@ def main():
 
     octree, mesh = world.load()
 
-    if gui.cfg.get('headless'):
+    if gui.cfg.get('headless', not gui.has_pyglet):
         exploration.run(octree=octree, mesh=mesh)
 
     else:
