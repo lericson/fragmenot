@@ -1,7 +1,7 @@
 -e git+file://${PWD}@726d83c54a7216914112aa18863e41ba94789290#egg=cython
--e git+file://${PWD}@98a067e97cb10b0ff3d1eaf5624d9acdf9ec37a1#egg=octomap_python
 -e git+file://${PWD}@dbfc08c8a34108f3fa5d9e22a5797e14ff52b3f8#egg=trimesh
 -e git+file://${PWD}@0e1578700f152d0f23cdbd3d115759f3fbf80154#egg=pyembree
+-e git+file://${PWD}@953ebd1ec0eb0b6846d491076a432cd53b7fd0c5#egg=octomap_python
 autoprop==1.0.1
 cycler==0.10.0
 dataclasses>=0.6
