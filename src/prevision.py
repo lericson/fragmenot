@@ -24,7 +24,7 @@ def subgraph(roadmap, *, mesh, seen_faces, seen_states,
 
     log.info('creating prevision subgraph (d=%.2f)', max_distance)
     log.debug('seen_faces: %d, seen_states: %d',
-              np.count_nonzero(seen_faces), len(seen_states)
+              np.count_nonzero(seen_faces), len(seen_states))
 
     R              = NodeDataMap(roadmap, 'r')
     sensors_radius = sensors.visible_between.__kwdefaults__['radius']
