@@ -1,12 +1,10 @@
+import sys
 import yaml
 import warnings
-import logging
 from functools import wraps
 from os import path, environ
 from inspect import signature
 
-
-log = logging.getLogger(__name__)
 
 # Environment configuration registry. Indirect so we can replace it.
 _environ = environ
@@ -99,11 +97,17 @@ _file_cfg.update(_load_file_cfg())
 
 
 @configurable
-def set_profile(*, profile: cfg.param = 'default'):
+def set_profile(*,
+                profile: cfg.param = 'default',
+                verbose: cfg.param = True):
     if isinstance(profile, str):
         profile = [profile]
     for prof in profile:
-        for modname, d in cfg.get(prof, {}).items():
+        if verbose:
+            print('loading profile', prof, file=sys.stderr)
+        for modname, d in cfg[prof].items():
+            if verbose:
+                print(' ', modname, d, file=sys.stderr)
             _file_cfg.setdefault(modname, {}).update(d)
 
 
