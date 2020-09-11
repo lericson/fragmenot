@@ -80,7 +80,9 @@ class State():
 
 
 @threadable
-def step(state):
+@parame.configurable
+def step(state, *,
+         jump_edges: cfg.param = True):
 
     mesh    = state.mesh
     seen    = state.seen_faces
@@ -104,7 +106,8 @@ def step(state):
     roadmap_ = roadmap.copy()
     del roadmap
 
-    prm.update_jumps(roadmap_, seen=seen, active={node})
+    if jump_edges:
+        prm.update_jumps(roadmap_, seen=seen, active={node})
 
     roadmap_local = prevision.subgraph(roadmap_, mesh=mesh, seen_faces=seen, seen_states=seq)
 

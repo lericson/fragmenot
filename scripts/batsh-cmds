@@ -10,6 +10,7 @@ jobs=(
     "$flags ${rundir}ours       PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",ours]           $python $script"
     "$flags ${rundir}gn         PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",gn]             $python $script"
     "$flags ${rundir}bfs        PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",bfs]            $python $script"
+    "$flags ${rundir}tree       PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",treelike]       $python $script"
     "$flags ${rundir}uni        PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",uniform]        $python $script"
     "$flags ${rundir}nj         PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",nojump]         $python $script"
 
@@ -19,11 +20,11 @@ jobs=(
     #"$flags ${rundir}gn_nj      PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",gn,nojump]      $python $script"
 
     # Compare BFS-style pathing without PV.
-    "$flags ${rundir}bfs_uni       PARAME_PROFILE=[shortrange,pv000,bfs,uniform]           $python $script"
-    "$flags ${rundir}bfs_nj        PARAME_PROFILE=[shortrange,pv000,bfs,nojump]            $python $script"
-    "$flags ${rundir}bfs_gn        PARAME_PROFILE=[shortrange,pv000,bfs,gn]                $python $script"
-    "$flags ${rundir}bfs_uni_nj    PARAME_PROFILE=[shortrange,pv000,bfs,uniform,nojump]    $python $script"
-    "$flags ${rundir}bfs_uni_nj_gn PARAME_PROFILE=[shortrange,pv000,bfs,uniform,nojump,gn] $python $script"
+    "$flags ${rundir}tree_uni       PARAME_PROFILE=[shortrange,pv000,treelike,uniform]           $python $script"
+    "$flags ${rundir}tree_nj        PARAME_PROFILE=[shortrange,pv000,treelike,nojump]            $python $script"
+    "$flags ${rundir}tree_gn        PARAME_PROFILE=[shortrange,pv000,treelike,gn]                $python $script"
+    "$flags ${rundir}tree_uni_nj    PARAME_PROFILE=[shortrange,pv000,treelike,uniform,nojump]    $python $script"
+    "$flags ${rundir}tree_uni_nj_gn PARAME_PROFILE=[shortrange,pv000,treelike,uniform,nojump,gn] $python $script"
 
     #"$flags ${rundir}uni_nj     PARAME_PROFILE=[shortrange,pvinf,uniform,nojump] $python $script"
     #"$flags ${rundir}gn_bfs_nj  PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",gn,bfs,nojump]  $python $script"
