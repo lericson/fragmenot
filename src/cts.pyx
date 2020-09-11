@@ -160,6 +160,11 @@ def expand(object T, *, object roadmap,
 
     cdef unsigned char [::1] vis
 
+    # In BFS-style search, we visit each edge in G twice. Not sure why, but it
+    # turns out that way.
+    if path_selection == PS_BFS:
+        steps = 2*len(roadmap.edges) + 1
+
     D.reserve(len(G.edges))
     Vis_faces.reserve(len(G.edges))
     G_adj.reserve(len(G))
@@ -235,8 +240,12 @@ def expand(object T, *, object roadmap,
     #face_score[~vis_unseen]             = K
 
     log.debug('updating face colors')
-    gui.update_face_hsv(hues=0.8*(1 - (-np.log(face_score/K)/alpha)/200), layer='score')
-    #gui.update_face_hsv(hues=0.8/covis_area.max()*covis_area)
+    gui.update_face_hsva(h=0.8*(1 - (-np.log(face_score/K)/alpha)/200),
+                         s=1.0*vis_unseen,
+                         v=0.6 + 0.4*vis_unseen,
+                         layer='score')
+    #gui.update_face_hsva(sats=0.8*(1 - (-np.log(face_score/K)/alpha)/200), layer='score')
+    #gui.update_face_hsva(hues=0.8/covis_area.max()*covis_area)
 
     log.info('  face_area: %s', statstr(face_area[vis_unseen]))
     log.info(' covis_area: %s', statstr(covis_area[vis_unseen]))
@@ -259,7 +268,7 @@ def expand(object T, *, object roadmap,
     cdef double [::1] face_score_vw = face_score;
 
     # For PS_BFS, set of visited _EDGES_.
-    cdef unordered_set[long] visited
+    cdef unordered_set[int] visited = {node_root.s}
     cdef NodeT node = NodeT(0, 0, 0, False, 0.0, 0.0, int_list())
 
     cdef int_list_iterator it
@@ -285,16 +294,6 @@ def expand(object T, *, object roadmap,
 
             #print(path_T, path_G)
 
-            if T_succ.find(u) == T_succ.end():
-                node_u.unvisited = G_adj[node_u.s]
-
-            if path_selection == PS_BFS:
-              node_u.unvisited.remove_if(EdgeExistsPredicate(visited, node_u.s))
-              #node_u.unvisited.erase(remove_if(node_u.unvisited.begin(),
-              #                                 node_u.unvisited.end(),
-              #                                 EdgeExistsPredicate(visited, node_u.s)),
-              #                       node_u.unvisited.end())
-
             if not node_u.unvisited.empty():
                 # The tree node has unvisited neighboring states, create a new
                 # node whose state is one of them.
@@ -304,25 +303,34 @@ def expand(object T, *, object roadmap,
                 node_v.s = node_u.unvisited.front()
                 node_u.unvisited.pop_front()
                 T_succ[u].push_front(v)
-                if path_selection == PS_BFS:
-                    visited.insert(h(node_u.s, node_v.s))
-                    visited.insert(h(node_v.s, node_u.s))
+
+                if path_selection == PS_OURS:
+                    node_v.unvisited = G_adj[node_v.s]
+
+                elif path_selection == PS_BFS:
+                    if 0 < visited.count(node_v.s):
+                        node_v.unvisited.clear()
+                    else:
+                        node_v.unvisited = G_adj[node_v.s]
+                        visited.insert(node_v.s)
+
+
                 #print('insert', f'{v} (s={node_v.s})')
                 break
 
-            # Find the least visited successor of u in T. This results in
+            # Find the least explored successor of u in T. This results in
             # BFS-like behavior.
             with cython.boundscheck(False), cython.wraparound(False):
-                v      = u
-                node_v = &Node[v]
+                v   = -1
+                n_v = 0
                 for w in T_succ[u]:
                     node_w = &Node[w]
-                    #print(' ', f'(node_w.n_child := {node_w.n_child}) < (node_v.n_child := {node_v.n_child})')
-                    if not node_w.skip and node_w.n_child < node_v.n_child:
-                        v      = w
-                        node_v = &Node[v]
+                    #print(' ', f'(node_w.n_child := {node_w.n_child}) < (n_v := {n_v})')
+                    if not node_w.skip and (v == -1 or node_w.n_child < n_v):
+                        v   = w
+                        n_v = Node[v].n_child
 
-            if v == u:
+            if v == -1:
                 # u has no unvisited next states in G, and all its successors
                 # in T are unvisitable. Mark u as unvisitable too.
                 node_u.skip = True
@@ -346,13 +354,6 @@ def expand(object T, *, object roadmap,
 
         else:
           with gil:
-            # If we get here, the root is marked skip. The only valid reason
-            # for this to happen is that we must have visited every edge.
-            missed = {(u, v) for (u, v) in G.edges if visited.count(h(u, v)) == 0}
-            if missed:
-                log.error('internal inconsistency detected! root node marked '
-                          'skip before visiting all edges. missed edges: %s',
-                          missed)
             break
 
         # Set inserted node v's attributes
@@ -389,6 +390,20 @@ def expand(object T, *, object roadmap,
                 gui.hilight_roadmap_edges(G, pairwise(best_path_G))
                 gui.wait_draw()
 
+    if path_selection == PS_BFS:
+        if not node_root.skip:
+            log.warn('bfs did not mark root node skip, did not finish search.')
+        missed = set(G.nodes) - set(visited)
+        if missed:
+            log.error('bfs did not visit all nodes. missed: %s', missed)
+            log.error('set(G.nodes)=%s, set(visited)=%s', set(G.nodes), set(visited))
+
+        visited_edges  = [(Node[u].s, Node[v].s) for u, succ_u in T_succ for v in succ_u]
+        visited_edges += [(Node[v].s, Node[u].s) for u, succ_u in T_succ for v in succ_u]
+        missed = set(G.edges) - set(visited_edges)
+        if missed:
+            log.error('bfs did not visit all edges. missed: %s', missed)
+
     IF test_seen:
         if not any([np.any(np.asarray(Seen[v]) & ~np.asarray(Seen[root])) for v in range(<int>Node.size())]):
             if best_node == root:
@@ -412,7 +427,7 @@ def expand(object T, *, object roadmap,
     log.info('   dist: %s', statstr([n.dist      for n in Node]))
     log.info('n_child: %s', statstr([n.n_child   for n in Node]))
     log.info('  score: %s', statstr([n.score     for n in Node]))
-    log.info(' degree: %s', statstr([p.second.size() for p in T_succ]))
+    log.info(' degree: %s', statstr([T_succ[i].size() for i in range(<int>T_succ.size())]))
     #log.info('  depth: %s', statstr(list(Depth)))
     #log.info('n_child: %s', statstr(list(N_child)))
     #log.info(' degree: %s', statstr(list(map(G.degree, G))))

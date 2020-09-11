@@ -59,3 +59,95 @@ def format_duration(secs):
         if v < 1:
             break
     return ''.join(L[::-1])
+
+
+def endswith_cycle(seq, *, n, k=2):
+    "True if *seq* ends in a k*n long k-cycle"
+    subseq = seq[-n*k:]
+    if len(subseq) < n*k:
+        return False
+    pairs = {(i, subseq[j*k + i]) for j in range(n) for i in range(k)}
+    return len(pairs) == k
+
+
+def hsva_to_rgba(hsva):
+    """
+    Convert hsva values to rgba.
+
+    Parameters
+    ----------
+    hsva : (..., 4) array-like
+       All values assumed to be in range [0, 1]
+
+    Returns
+    -------
+    rgba : (..., 4) ndarray
+       Colors converted to RGBA values in range [0, 1]
+    """
+    hsva = np.asarray(hsva)
+
+    # check length of the last dimension, should be _some_ sort of rgb
+    if hsva.shape[-1] != 4:
+        raise ValueError("Last dimension of input array must be 4; "
+                         "shape {shp} was found.".format(shp=hsva.shape))
+
+    in_shape = hsva.shape
+    hsva = np.array(
+        hsva, copy=False,
+        dtype=np.promote_types(hsva.dtype, np.float32),  # Don't work on ints.
+        ndmin=2,  # In case input was 1D.
+    )
+
+    h = hsva[..., 0]
+    s = hsva[..., 1]
+    v = hsva[..., 2]
+    a = hsva[..., 3]
+
+    r = np.empty_like(h)
+    g = np.empty_like(h)
+    b = np.empty_like(h)
+
+    i = (h * 6.0).astype(int)
+    f = (h * 6.0) - i
+    p = v * (1.0 - s)
+    q = v * (1.0 - s * f)
+    t = v * (1.0 - s * (1.0 - f))
+
+    idx = i % 6 == 0
+    r[idx] = v[idx]
+    g[idx] = t[idx]
+    b[idx] = p[idx]
+
+    idx = i == 1
+    r[idx] = q[idx]
+    g[idx] = v[idx]
+    b[idx] = p[idx]
+
+    idx = i == 2
+    r[idx] = p[idx]
+    g[idx] = v[idx]
+    b[idx] = t[idx]
+
+    idx = i == 3
+    r[idx] = p[idx]
+    g[idx] = q[idx]
+    b[idx] = v[idx]
+
+    idx = i == 4
+    r[idx] = t[idx]
+    g[idx] = p[idx]
+    b[idx] = v[idx]
+
+    idx = i == 5
+    r[idx] = v[idx]
+    g[idx] = p[idx]
+    b[idx] = q[idx]
+
+    idx = s == 0
+    r[idx] = v[idx]
+    g[idx] = v[idx]
+    b[idx] = v[idx]
+
+    rgb = np.stack([r, g, b, a], axis=-1)
+
+    return rgb.reshape(in_shape)

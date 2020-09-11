@@ -74,7 +74,8 @@ parame:
     bfs:        {tree_search: {path_selection: bfs}}
     uniform:    {tree_search: {weight_function: uniform}}
     nojump:     {prm: {max_degree_jump: 0}}
-    treelike:   {tree_search: {path_selection: bfs}, exploration: {jump_edges: false}}
+    hyper:      {prm: {hyperconnect: true}}
+    tree:       {tree_search: {path_selection: bfs}, exploration: {jump_edges: false}}
 
     # This configuration loads pretty fast
     test:

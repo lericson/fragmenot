@@ -16,7 +16,7 @@ import prm
 import parame
 import prevision
 import tree_search
-from utils import threadable, format_duration
+from utils import threadable, format_duration, endswith_cycle
 
 
 log = logging.getLogger(__name__)
@@ -170,7 +170,7 @@ def output_path(*args, create=True,
 @threadable
 @parame.configurable
 def run(*, octree, mesh, state=None,
-        num_steps:        cfg.param = 5000,
+        num_steps:        cfg.param = 2000,
         percent_complete: cfg.param = 100.0,
         close_on_finish:  cfg.param = True):
 
@@ -216,6 +216,13 @@ def run(*, octree, mesh, state=None,
             log.info('exploration complete!')
             log.info('link: %s', f'file://{path.abspath(output_path())}')
             break
+
+        if any(endswith_cycle(state.sequence, n=3, k=k) for k in {1,2,3}):
+            log.error('exploration stuck in a cycle, aborting')
+            break
+
+    else:
+        log.error('exploration did not finish in %d steps', num_steps)
 
     if close_on_finish:
         gui.close()

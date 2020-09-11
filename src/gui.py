@@ -3,7 +3,6 @@
 import time
 import logging
 import threading
-from colorsys import hsv_to_rgb
 
 import trimesh
 import trimesh.viewer
@@ -13,6 +12,7 @@ from trimesh.path.entities import Line as LineEntity
 from trimesh.transformations import translation_matrix
 
 import parame
+from utils import hsva_to_rgba
 
 
 try:
@@ -27,24 +27,25 @@ except BaseException as e:
 cfg = parame.Module(__name__)
 log = logging.getLogger(__name__)
 
-hsva_to_rgba = lambda h, s, v, a: np.array([*hsv_to_rgb(h, s, v), a])
+f = lambda x: (255*x).astype(np.uint8)
 
-color_envmesh       = hsva_to_rgba(0.70, 0.20, 0.80, 1.000)
-color_envmesh_vis   = hsva_to_rgba(0.70, 1.00, 0.40, 1.000)
-color_envmesh_aware = hsva_to_rgba(0.70, 1.00, 0.80, 1.000)
-color_envmesh_seen  = hsva_to_rgba(0.33, 1.00, 0.80, 1.000)
-color_envmesh_hl    = hsva_to_rgba(0.00, 1.00, 0.80, 1.000)
+color_envmesh          = f(hsva_to_rgba([0.70, 0.20, 0.80, 1.000]))
+color_envmesh_vis      = f(hsva_to_rgba([0.70, 1.00, 0.40, 1.000]))
+color_envmesh_aware    = f(hsva_to_rgba([0.70, 1.00, 0.80, 1.000]))
+color_envmesh_seen     = f(hsva_to_rgba([0.33, 1.00, 0.80, 1.000]))
+color_envmesh_hl       = f(hsva_to_rgba([0.00, 1.00, 0.80, 1.000]))
 
-color_edge             = hsva_to_rgba(0.00, 0.00, 1.00, 0.375)
-color_edge_skip        = hsva_to_rgba(0.00, 0.00, 1.00, 0.125)
-color_edge_jump        = hsva_to_rgba(0.60, 0.40, 0.80, 0.125)
-color_edge_hl          = hsva_to_rgba(0.22, 1.00, 0.80, 1.000)
-color_edge_skip_hl     = hsva_to_rgba(0.22, 0.40, 0.80, 1.000)
-color_edge_jump_hl     = hsva_to_rgba(0.50, 1.00, 0.80, 1.000)
+color_edge             = f(hsva_to_rgba([0.00, 0.00, 1.00, 0.375]))
+color_edge_skip        = f(hsva_to_rgba([0.00, 0.00, 1.00, 0.125]))
+color_edge_jump        = f(hsva_to_rgba([0.60, 0.40, 0.80, 0.125]))
+color_edge_hyper       = f(hsva_to_rgba([0.60, 0.40, 0.80, 0.125]))
+color_edge_hl          = f(hsva_to_rgba([0.22, 1.00, 0.80, 0.990]))
+color_edge_skip_hl     = f(hsva_to_rgba([0.22, 0.40, 0.80, 0.990]))
+color_edge_jump_hl     = f(hsva_to_rgba([0.50, 1.00, 0.80, 0.990]))
 
-color_trajectory_edge  = hsva_to_rgba(0.07, 1.00, 1.00, 0.900)
+color_trajectory_edge  = f(hsva_to_rgba([0.07, 1.00, 1.00, 0.990]))
 
-color_position_sphere  = hsva_to_rgba(0.07, 1.00, 1.00, 0.700)
+color_position_sphere  = f(hsva_to_rgba([0.07, 1.00, 1.00, 0.700]))
 
 # globals go brrrrrrr
 _c = type('Context', (), {})()
@@ -61,24 +62,16 @@ def mock_when_headless(f, *,
 
 @mock_when_headless
 @parame.configurable
-def update_roadmap(roadmap, *,
-                   show_jumps: cfg.param = False):
+def update_roadmap(roadmap):
 
     path  = _c.roadmap_path
     lines = []
     verts = []
 
     for u, v, dd_uv in roadmap.edges.data():
-
-        rs_uv = dd_uv['rs']
-
-        if show_jumps:
-            rs_uv = (rs_uv[0], rs_uv[-1])
-
-        elif dd_uv['jump']:
-            continue
-
-        pts_uv = range(len(verts), len(verts) + len(rs_uv))
+        rs_uv   = dd_uv['rs']
+        rs_uv   = [rs_uv[0], rs_uv[-1]]
+        pts_uv  = range(len(verts), len(verts) + len(rs_uv))
         line_uv = dd_uv['_line'] = LineEntity(points=pts_uv)
         lines.append(line_uv)
         verts.extend(rs_uv)
@@ -102,6 +95,8 @@ def reset_roadmap_edges(roadmap):
 
         if dd_uv['jump']:
             line_uv.color = color_edge_jump
+        elif 2 < len(dd_uv['vs']):
+            line_uv.color = color_edge_hyper
         elif dd_uv['skip']:
             line_uv.color = color_edge_skip
 
@@ -120,12 +115,17 @@ def hilight_roadmap_edges(roadmap, edges, reset=True):
         dd_uv = roadmap.edges[u, v]
 
         for w, w_ in pairwise(dd_uv['vs']):
-            if (w, w_) in roadmap.edges:
-                roadmap.edges[w, w_]['_line'].color = color_edge_hl
-            else:
+            if (w, w_) not in roadmap.edges:
                 log.error(f'edge {w}-{w_} does not exist')
+                continue
+            dd_ww_ = roadmap.edges[w, w_]
+            if dd_ww_['skip']:
+                clr = color_edge_skip_hl
+            else:
+                clr = color_edge_hl
+            dd_ww_['_line'].color = color_edge_hl
 
-        if dd_uv['jump']:
+        if dd_uv['jump'] or 2 < len(dd_uv['vs']):
             clr = color_edge_jump_hl
         elif dd_uv['skip']:
             clr = color_edge_skip_hl
@@ -143,11 +143,11 @@ def update_vis_faces(*, visible=None, aware=None, seen=None, hilight=None):
     if aware is None:   aware   = np.zeros_like(visible)
     if seen is None:    seen    = np.zeros_like(visible)
     if hilight is None: hilight = np.zeros_like(visible)
-    _c.layers['visible'][:]       = 255*color_envmesh
-    _c.layers['visible'][visible] = 255*color_envmesh_vis
-    _c.layers['visible'][aware]   = 255*color_envmesh_aware
-    _c.layers['visible'][seen]    = 255*color_envmesh_seen
-    _c.layers['visible'][hilight] = 255*color_envmesh_hl
+    _c.layers['visible'][:]       = color_envmesh
+    _c.layers['visible'][visible] = color_envmesh_vis
+    _c.layers['visible'][aware]   = color_envmesh_aware
+    _c.layers['visible'][seen]    = color_envmesh_seen
+    _c.layers['visible'][hilight] = color_envmesh_hl
     #_c.hl_faces_base_color = _c.envmesh.visual.face_colors.copy()
 
 
@@ -155,12 +155,19 @@ def update_vis_faces(*, visible=None, aware=None, seen=None, hilight=None):
 def hilight_vis_faces(faces):
     #if _c.hl_faces_base_color is not None:
     #    _c.envmesh.visual.face_colors[:] = _c.hl_faces_base_color
-    _c.layers['visible'][faces] = 255*color_envmesh_hl
+    _c.layers['visible'][faces] = color_envmesh_hl
 
 
 @mock_when_headless
-def update_face_hsv(*, layer, hues, saturation=1.0, value=1.0, alpha=1.0):
-    _c.layers[layer][:] = 255*np.array([[*hsv_to_rgb(hue, saturation, value), alpha] for hue in hues])
+def update_face_hsva(*, layer, h, s=1.0, v=1.0, a=1.0):
+    N = _c.envmesh.faces.shape[0]
+    h, s, v, a = np.atleast_1d(h, s, v, a)
+    hsva = np.empty((N, 4))
+    hsva[:, 0] = h
+    hsva[:, 1] = s
+    hsva[:, 2] = v
+    hsva[:, 3] = a
+    _c.layers[layer][:] = (255*hsva_to_rgba(hsva)).astype(np.uint8)
 
 
 @mock_when_headless
@@ -223,7 +230,7 @@ def make_scene(*, mesh):
     _c.roadmap_path    = trimesh.path.Path3D()
     _c.trajectory_path = trimesh.path.Path3D()
     _c.sphere          = trimesh.creation.icosphere(radius=0.25)
-    _c.sphere.visual.vertex_colors[:] = 255*color_position_sphere
+    _c.sphere.visual.vertex_colors[:] = color_position_sphere
     _c.sphere_position = np.r_[0.0, 0.0, 0.0]
 
     scene = trimesh.Scene([mesh, _c.roadmap_path, _c.trajectory_path, _c.sphere])

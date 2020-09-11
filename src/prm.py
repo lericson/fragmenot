@@ -138,7 +138,8 @@ def new(*, mesh, octree, bbox=None, nodes={},
         bin_size:         cfg.param = 1.5,
         regular_grid:     cfg.param = False,
         num_nodes_max:    cfg.param = 2000,
-        z_bounds:         cfg.param = None):
+        z_bounds:         cfg.param = None,
+        hyperconnect:     cfg.param = False):
 
     log.info(f'building prm (max {num_nodes_max} nodes)')
 
@@ -220,6 +221,16 @@ def new(*, mesh, octree, bbox=None, nodes={},
                 G.remove_node(node)
 
     sensors.update_edge_visibility(G, mesh)
+
+    if hyperconnect:
+        # Important that we copy; otherwise it will create new edges based on
+        # the just-created new edges.
+        log.debug('creating hyperconnects (%d edges before)', len(G.edges))
+        G_ = G.copy()
+        for u, v in G_.edges:
+            for v, w in G_.edges(v):
+                _add_jump(G, u, w, path=[u, v, w], skip=False, jump=False)
+        log.debug('%d edges after hyperconnecting', len(G.edges))
 
     return G
 
@@ -341,6 +352,12 @@ def _shortest_path_memoized(G, u, v):
     "Shortest path from u to v in G, memoizes all shortest paths from u."
     _shortest_path_memo = G.graph.setdefault('_shortest_path_memo', {})
 
+    # Check first if we already know the reverse (i.e. v to u)
+    if v in _shortest_path_memo:
+        if u not in _shortest_path_memo[v]:
+            raise nx.NetworkXNoPath((u, v))
+        return _shortest_path_memo[v][u][::-1]
+
     if u not in _shortest_path_memo:
         _shortest_path_memo[u] = nx.shortest_path(G, u, weight=_weightfunc)
 
@@ -350,14 +367,15 @@ def _shortest_path_memoized(G, u, v):
     return _shortest_path_memo[u][v]
 
 
-def _add_jump(G, u, v, **kw):
+def _add_jump(G, u, v, *, path=None, **kw):
     "Add jump u-v in G"
 
     R         = NodeDataMap(G, 'r')
     Vs        = EdgeDataMap(G, 'vs')
     Vis_faces = EdgeDataMap(G, 'vis_faces')
 
-    path = _shortest_path_memoized(G, u, v)
+    if path is None:
+        path = _shortest_path_memoized(G, u, v)
 
     # Turn the path into its non-jump edge sequence.
     vs_uv  = []
