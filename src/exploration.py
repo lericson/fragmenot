@@ -199,7 +199,11 @@ def run(*, octree, mesh, state=None,
             state.update_gui()
 
         else:
-            state = step(state)
+            try:
+                state = step(state)
+            except tree_search.NoPlanFoundError as e:
+                log.error('exploration step failed: %s', e)
+                break
 
         gui.show_message(f'Step {i} completed.\n'
                          f'{100*state.completion:.2f}% explored.\n'

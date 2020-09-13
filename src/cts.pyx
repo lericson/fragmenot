@@ -427,7 +427,7 @@ def expand(object T, *, object roadmap,
     log.info('   dist: %s', statstr([n.dist      for n in Node]))
     log.info('n_child: %s', statstr([n.n_child   for n in Node]))
     log.info('  score: %s', statstr([n.score     for n in Node]))
-    log.info(' degree: %s', statstr([T_succ[i].size() for i in range(<int>T_succ.size())]))
+    log.info('odegree: %s', statstr([T_succ[i].size() for i in range(<int>Node.size())]))
     #log.info('  depth: %s', statstr(list(Depth)))
     #log.info('n_child: %s', statstr(list(N_child)))
     #log.info(' degree: %s', statstr(list(map(G.degree, G))))
