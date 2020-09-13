@@ -95,8 +95,7 @@ def main():
             'Programming Language :: Python :: Implementation :: PyPy',
         ],
         ext_modules=ext_modules,
-        cmdclass={'build_ext': build_ext},
-        cmake_source_dir='src/octomap',
+        cmdclass={'build_ext': build_ext}
     )
 
 
