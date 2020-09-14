@@ -314,7 +314,6 @@ def expand(object T, *, object roadmap,
                         node_v.unvisited = G_adj[node_v.s]
                         visited.insert(node_v.s)
 
-
                 #print('insert', f'{v} (s={node_v.s})')
                 break
 
@@ -428,6 +427,18 @@ def expand(object T, *, object roadmap,
     log.info('n_child: %s', statstr([n.n_child   for n in Node]))
     log.info('  score: %s', statstr([n.score     for n in Node]))
     log.info('odegree: %s', statstr([T_succ[i].size() for i in range(<int>Node.size())]))
+    min_depth_unv = min([n.depth for n in Node if not n.unvisited.empty()], default=None)
+    log.info('minimum depth of tree node with unvisited states: %s', min_depth_unv)
+    Num_vis = [0]*10
+    Num_unv = [0]*10
+    for i in range(<int>Node.size()):
+        node_v = &Node[i]
+        Num_vis[node_v.depth] += len(T_succ[i])
+        Num_unv[node_v.depth] += len(node_v.unvisited)
+    for depth, (num_vis, num_unv) in enumerate(zip(Num_vis, Num_unv)):
+        if num_vis + num_unv == 0:
+            break
+        log.info('num visited + unvisited states at depth=%d:%7d + %d', depth, num_vis, num_unv)
     #log.info('  depth: %s', statstr(list(Depth)))
     #log.info('n_child: %s', statstr(list(N_child)))
     #log.info(' degree: %s', statstr(list(map(G.degree, G))))

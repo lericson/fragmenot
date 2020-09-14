@@ -201,8 +201,8 @@ def run(*, octree, mesh, state=None,
         else:
             try:
                 state = step(state)
-            except tree_search.NoPlanFoundError as e:
-                log.error('exploration step failed: %s', e)
+            except tree_search.NoPlanFoundError:
+                log.error('unable to find any path, aborting')
                 break
 
         gui.show_message(f'Step {i} completed.\n'
@@ -218,7 +218,6 @@ def run(*, octree, mesh, state=None,
 
         if not (state.completion < percent_complete/100):
             log.info('exploration complete!')
-            log.info('link: %s', f'file://{path.abspath(output_path())}')
             break
 
         if any(endswith_cycle(state.sequence, n=3, k=k) for k in {1,2,3}):
@@ -227,6 +226,8 @@ def run(*, octree, mesh, state=None,
 
     else:
         log.error('exploration did not finish in %d steps', num_steps)
+
+    log.info('link: %s', f'file://{path.abspath(output_path())}')
 
     if close_on_finish:
         gui.close()
