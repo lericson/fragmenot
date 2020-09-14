@@ -9,7 +9,7 @@ while getopts "d:" opt; do
   esac
 done
 
-for d in ./"${var}"/runs_*; do
-  f=( "$d"/run_* )
-  printf "%-20s %d %s\n" "$d:" "${#f[@]}"
+for d in ./"${var}"/runs_*/run_*; do
+  f=( "$d"/state?????.npz )
+  [[ "${#f[@]}" -lt 10 ]] && echo "$d"
 done

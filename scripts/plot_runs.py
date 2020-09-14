@@ -19,33 +19,35 @@ import parame
 
 cfg = parame.Module('plot')
 
+pct_unexplored_log10 = cfg.get('pct_unexplored_log10', 3)
+pct_complete = 1e-2*(100.0 - 10.0**(-pct_unexplored_log10))
+
 
 @dataclass
 class Desc():
-    pathname:   str
-    label:      str
-    d:          float
-    x:          NDArray[(Any,), np.float]
-    y:          NDArray[(Any,), np.float]
-
-    seen:       NDArray[(Any, Any), bool]     = None
-    holes:      NDArray[(Any,),     np.float] = None
-    faces:      NDArray[(Any, 3),   np.int]   = None
-    vertices:   NDArray[(Any, 3),   np.float] = None
-    mesh:       trimesh.Trimesh               = None
+    pathname: str
+    label:    str
+    d:        float
+    x:        NDArray[(Any,), np.float]
+    y:        NDArray[(Any,), np.float]
+    seen:     NDArray[(Any, Any), bool]
+    holes:    NDArray[(Any,),     np.float]
+    mesh:     trimesh.Trimesh
 
 
 def check(x, y):
-    assert 10 < len(x) < 2000, f'10 < (len(x) := {len(x)}) < 2000'
+    assert 10 < len(x) < 5000, f'10 < (len(x) := {len(x)}) < 5000'
     assert x.shape == y.shape, f'(x.shape := {x.shape}) == (y.shape := {y.shape})'
-    assert 0.0000 < x[ 0] <= 0.050, f'0.000 < (x[-1] := {x[-1]:.4f}) <= 0.050'
-    assert 0.9999 < x[-1] <= 1.000, f'0.998 < (x[-1] := {x[-1]:.4f}) <= 1.000'
+    assert 0.0000 < x[ 0] <= 0.050, f'{0.0:.5g} < (x[-1] := {x[-1]:.5g}) <= {0.05:.5g}'
+    assert pct_complete < x[-1] <= 1.000, f'(pct_complete := {pct_complete:.5g}) < (x[-1] := {x[-1]:.5f}) <= {1.0:.5g}'
     assert np.all(np.diff(x[:-1]) >= 0)
     assert np.all(np.diff(y[:-1]) >= 0)
 
 
-def bfs(adj, source, *, seen):
-    "Allows giving an initial seen, and reusing it"
+def bfs(adj, source, *, seen=None):
+    "BFS but optionally with an initial *seen*"
+    if seen is None:
+        seen = set()
     nextlevel = {source}
     while nextlevel:
         thislevel = nextlevel - seen
@@ -86,11 +88,12 @@ def load(pathname):
     if not path.exists(cache_pathname):
         raise RuntimeError('you need to precompute the plot cache')
 
-    dd    = np.load(cache_pathname)
+    dd    = np.load(cache_pathname, allow_pickle=True)
     x     = np.array(dd['x'])
     y     = np.array(dd['y'])
     seen  = np.array(dd['seen'])
     holes = np.array(dd['holes'])
+    print(f'n={len(x)}', end=' ', flush=True)
     check(x, y)
     print('cache', end=' ')
 
@@ -129,6 +132,9 @@ def main(*, pathnames=sys.argv[1:],
                 continue
         Ds.setdefault(desc.d, []).append(desc)
 
+    if not Ds:
+        return
+
     Ds = {d: Ds[d] for d in sorted(Ds)}
 
     from scipy.interpolate import interp1d
@@ -161,7 +167,7 @@ def main(*, pathnames=sys.argv[1:],
 
     from matplotlib import ticker, scale
     for i, d in enumerate(sorted(Ds)):
-        X        = np.linspace(0.0, 1e-2*(100.0 - 0.001), 1000)
+        X        = np.linspace(0.0, pct_complete, 1000)
         F        = [interp1d(ds.x, ds.y, fill_value=(0.0, ds.y.max())) for ds in Ds[d]]
         FX       = [f(X) for f in F]
         mu_FX    = np.mean(FX, axis=0)

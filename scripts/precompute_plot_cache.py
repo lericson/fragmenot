@@ -16,7 +16,7 @@ cfg = parame.Module('precache')
 
 
 def check(x, y):
-    assert 10 < len(x) < 2000, f'10 < (len(x) := {len(x)}) < 2000'
+    assert 10 < len(x) < 5000, f'10 < (len(x) := {len(x)}) < 5000'
     assert x.shape == y.shape, f'(x.shape := {x.shape}) == (y.shape := {y.shape})'
     assert 0.0000 < x[ 0] <= 0.050, f'0.000 < (x[-1] := {x[-1]:.4f}) <= 0.050'
     assert 0.9999 < x[-1] <= 1.000, f'0.998 < (x[-1] := {x[-1]:.4f}) <= 1.000'
@@ -50,8 +50,6 @@ def precompute_cache(pathname, *,
 
     parame._environ  = env['environ']
     parame._file_cfg = env['parame']
-    #d = env['parame']['prevision']['max_distance']
-    #p = env['parame']['parame']['profile']
     p = parame.cfg['profile']
     parame.set_profile(profile=p)
 

@@ -5,15 +5,15 @@ var  ?= var
 pat  := $(var)/runs_*/run_*
 runs := $(wildcard $(pat))
 
-$(info Pattern $(pat) matches $(words $(runs)) runs)
+MAKEFLAGS += --keep-going
 
-
-MAKEFLAGS += -k
 PARAME_VERBOSE ?= false
 export
 
-%/.plot_cache.npz: ./scripts/precompute_plot_cache.py %/mesh.npz
-	$(python) $< $(@D) 
+$(info Pattern $(pat) matches $(words $(runs)) runs)
+
+%/.plot_cache.npz: %/environ.yaml %/mesh.npz
+	$(python) ./scripts/precompute_plot_cache.py $(@D) 
 
 all: $(runs:%=%/.plot_cache.npz)
 	@echo done
