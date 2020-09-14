@@ -12,6 +12,9 @@ import networkx as nx
 import parame
 
 
+cfg = parame.Module('precache')
+
+
 def check(x, y):
     assert 10 < len(x) < 2000, f'10 < (len(x) := {len(x)}) < 2000'
     assert x.shape == y.shape, f'(x.shape := {x.shape}) == (y.shape := {y.shape})'
@@ -38,7 +41,9 @@ def components(G, *, seen=None):
     return filter(None, (list(bfs(G.adj, v, seen=seen)) for v in G if v not in seen))
 
 
-def find_holes(pathname):
+@parame.configurable
+def precompute_cache(pathname, *,
+                     skip_check: cfg.param = False):
 
     with open(path.join(pathname, 'environ.yaml')) as f:
         env = yaml.safe_load(f)
@@ -56,8 +61,9 @@ def find_holes(pathname):
     cache_pathname = path.join(pathname, cache_filename)
 
     S = sorted(glob(path.join(pathname, 'state?????.npz')))
-    assert 10 < len(S) < 2000, f'10 < (len(S) := {len(S)}) < 2000'
-    S = [dict(np.load(fn)) for fn in S]
+    assert 10 < len(S) < 5000, f'10 < (len(S) := {len(S)}) < 5000'
+
+    S    = [dict(np.load(fn)) for fn in S]
     x    = np.array([s['completion'] for s in S])
     y    = np.array([s['distance']   for s in S])
     seen = np.array([s['seen_faces'] for s in S])
@@ -69,15 +75,15 @@ def find_holes(pathname):
         holes.append([np.sum(mesh.area_faces[comp]) for comp in components(G, seen=set(seen_indices_i))])
     holes = np.asarray(holes)
 
-    check(x, y)
+    if not skip_check:
+        check(x, y)
 
     np.savez(cache_pathname, x=x, y=y, seen=seen, holes=holes)
 
 
-@parame.configurable
 def main(*, pathnames=sys.argv[1:]):
     for i, pathname in enumerate(pathnames):
-        find_holes(pathname)
+        precompute_cache(pathname)
 
 
 if __name__ == '__main__':
