@@ -1,0 +1,21 @@
+#!/usr/bin/make -f 
+
+var  ?= var
+pat  := $(var)/runs_*/run_*
+runs := $(wildcard $(pat))
+
+$(info Pattern $(pat) matches $(words $(runs)) runs)
+
+
+MAKEFLAGS += -k
+PARAME_VERBOSE ?= false
+export
+
+%/.plot_cache.npz: ./scripts/precompute_plot_cache.py %/mesh.npz
+	$< $(@D) 
+
+all: $(runs:%=%/.plot_cache.npz)
+	@echo done
+
+.PHONY: all
+.DEFAULT: all

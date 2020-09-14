@@ -84,32 +84,15 @@ def load(pathname):
     cache_pathname = path.join(pathname, cache_filename)
 
     if not path.exists(cache_pathname):
-        S = sorted(glob(path.join(pathname, 'state?????.npz')))
-        assert 10 < len(S) < 2000, f'10 < (len(S) := {len(S)}) < 2000'
-        S = [dict(np.load(fn)) for fn in S]
-        x    = np.array([s['completion'] for s in S])
-        y    = np.array([s['distance']   for s in S])
-        seen = np.array([s['seen_faces'] for s in S])
+        raise RuntimeError('you need to precompute the plot cache')
 
-        holes = []
-        G = nx.Graph(list(mesh.face_adjacency))
-        for i, seen_i in enumerate(seen):
-            seen_indices_i, = np.nonzero(seen[i])
-            holes.append([np.sum(mesh.area_faces[comp]) for comp in components(G, seen=set(seen_indices_i))])
-        holes = np.asarray(holes)
-
-        check(x, y)
-        np.savez(cache_pathname, x=x, y=y, seen=seen, holes=holes)
-        print('recalculated', end=' ')
-
-    else:
-        dd    = np.load(cache_pathname)
-        x     = np.array(dd['x'])
-        y     = np.array(dd['y'])
-        seen  = np.array(dd['seen'])
-        holes = np.array(dd['holes'])
-        check(x, y)
-        print('cache', end=' ')
+    dd    = np.load(cache_pathname)
+    x     = np.array(dd['x'])
+    y     = np.array(dd['y'])
+    seen  = np.array(dd['seen'])
+    holes = np.array(dd['holes'])
+    check(x, y)
+    print('cache', end=' ')
 
     # Make sure we start at x = 0.
     if y[0] == 0.0:
