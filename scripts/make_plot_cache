@@ -1,5 +1,6 @@
 #!/usr/bin/make -f 
 
+python ?= python3
 var  ?= var
 pat  := $(var)/runs_*/run_*
 runs := $(wildcard $(pat))
@@ -12,7 +13,7 @@ PARAME_VERBOSE ?= false
 export
 
 %/.plot_cache.npz: ./scripts/precompute_plot_cache.py %/mesh.npz
-	$< $(@D) 
+	$(python) $< $(@D) 
 
 all: $(runs:%=%/.plot_cache.npz)
 	@echo done
