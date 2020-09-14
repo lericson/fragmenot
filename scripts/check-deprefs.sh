@@ -14,6 +14,8 @@ for GIT_WORK_TREE in ./env/src/*; do
   fi;
   if [[ $(git rev-parse $DEPREF) != $(git --git-dir=$GIT_DIR rev-parse HEAD) ]]; then
     echo $GIT_WORK_TREE HEAD is not equal to $DEPREF
+    echo Press Enter to set $DEPREF to the HEAD of $GIT_WORK_TREE
+    read -r || exit
     git fetch -n $GIT_DIR +HEAD:$DEPREF
   fi;
 done
