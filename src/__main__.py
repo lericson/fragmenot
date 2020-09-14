@@ -8,10 +8,14 @@ import exploration
 
 
 log = logging.getLogger(__name__)
-
+log_format = ('[%(asctime)s] %(filename)s:%(lineno)d '
+              '%(levelname)5.5s %(name)s: %(message)s')
 
 def main():
     logcolor.basic_config(level=logging.DEBUG)
+    file_handler = logging.FileHandler(exploration.output_path('run.log'))
+    file_handler.setFormatter(logging.Formatter(log_format))
+    logging.root.addHandler(file_handler)
     logging.getLogger('trimesh').setLevel(logging.INFO)
     logging.getLogger('matplotlib').setLevel(logging.INFO)
 
