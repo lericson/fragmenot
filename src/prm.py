@@ -134,6 +134,71 @@ def nearest_visible(r, *, mesh, index, margin=0.1, max_dist=np.inf):
 
 
 @parame.configurable
+def _connect(G, new, r_new, *, index, mesh, force=False,
+             max_degree: cfg.param = np.inf,
+             max_dist:   cfg.param = np.inf):
+
+    for r_neigh, dd_neigh in nearest_visible(r_new, mesh=mesh, index=index):
+
+        neigh = dd_neigh['node']
+
+        if max_degree <= G.degree(new):
+            break
+
+        if max_degree <= G.degree(neigh) and not force:
+            continue
+
+        if max_dist < np.linalg.norm(r_new - r_neigh)-1e-8:
+            continue
+
+        d = np.linalg.norm(r_new - r_neigh)
+        G.add_edge(new, neigh, d=d, rs=[r_new, r_neigh], vs=[new, neigh],
+                   skip=False, jump=False)
+
+
+def insert_random(G, node, *, num_attempts=10):
+
+    mesh  = G.graph['_mesh']
+    index = G.graph['_index']
+    bbox  = G.graph['_bbox']
+
+    bbox_min, bbox_max = bbox
+
+    for i in range(num_attempts):
+        r_node = np.random.uniform(bbox_min, bbox_max, size=(3,))
+        index.add(r_node, node=node)
+        G.add_node(node, r=r_node, skip=False)
+        _connect(G, node, r_node, mesh=mesh, index=index, force=True)
+        if G.degree(node) > 0:
+            break
+        index.remove_nearest(r_node)
+        G.remove_node(node)
+    else:
+        raise RuntimeError('could not place node')
+
+    sensors.update_edge_visibility(G, mesh, save_cache=False)
+
+
+def extract(G, nodes):
+    index = G.graph['_index']
+    for node, dd_node in list(G.nodes.data()):
+        if node not in nodes:
+            log.debug('remove node %d (nbrs: %s)', node, list(G.adj[node]))
+            index.remove_nearest(dd_node['r'])
+            G.remove_node(node)
+
+
+def extract_maximal_component(G):
+    comps = list(nx.connected_components(G))
+    if len(comps) > 1:
+        log.warn('roadmap is not connected, extracting maximal component')
+        log.debug('roadmap component sizes: %s', list(map(len, comps)))
+        extract(G, set(max(comps, key=len)))
+    else:
+        log.info('roadmap is connected, not extracting')
+
+
+@parame.configurable
 def new(*, mesh, octree, bbox=None, nodes={},
         bin_size:         cfg.param = 1.5,
         regular_grid:     cfg.param = False,
@@ -211,14 +276,7 @@ def new(*, mesh, octree, bbox=None, nodes={},
             gui.update_roadmap(G)
             gui.wait_draw()
 
-    if not nx.is_connected(G):
-        log.warn('roadmap is not connected, cutting out maximal component')
-        max_comp = max(nx.connected_components(G), key=len)
-        for node, dd_node in list(G.nodes.data()):
-            if node not in max_comp:
-                log.debug('remove node %d (nbrs: %s)', node, list(G.adj[node]))
-                index.remove_nearest(dd_node['r'])
-                G.remove_node(node)
+    extract_maximal_component(G)
 
     sensors.update_edge_visibility(G, mesh)
 
@@ -233,52 +291,6 @@ def new(*, mesh, octree, bbox=None, nodes={},
         log.debug('%d edges after hyperconnecting', len(G.edges))
 
     return G
-
-
-def insert_random(G, node, *, num_attempts=10):
-
-    mesh  = G.graph['_mesh']
-    index = G.graph['_index']
-    bbox  = G.graph['_bbox']
-
-    bbox_min, bbox_max = bbox
-
-    for i in range(num_attempts):
-        r_node = np.random.uniform(bbox_min, bbox_max, size=(3,))
-        index.add(r_node, node=node)
-        G.add_node(node, r=r_node, skip=False)
-        _connect(G, node, r_node, mesh=mesh, index=index, force=True)
-        if G.degree(node) > 0:
-            break
-        index.remove_nearest(r_node)
-        G.remove_node(node)
-    else:
-        raise RuntimeError('could not place node')
-
-    sensors.update_edge_visibility(G, mesh, save_cache=False)
-
-
-@parame.configurable
-def _connect(G, new, r_new, *, index, mesh, force=False,
-             max_degree: cfg.param = np.inf,
-             max_dist:   cfg.param = np.inf):
-
-    for r_neigh, dd_neigh in nearest_visible(r_new, mesh=mesh, index=index):
-
-        neigh = dd_neigh['node']
-
-        if max_degree <= G.degree(new):
-            break
-
-        if max_degree <= G.degree(neigh) and not force:
-            continue
-
-        if max_dist < np.linalg.norm(r_new - r_neigh)-1e-8:
-            continue
-
-        d = np.linalg.norm(r_new - r_neigh)
-        G.add_edge(new, neigh, d=d, rs=[r_new, r_neigh], vs=[new, neigh],
-                   skip=False, jump=False)
 
 
 @parame.configurable
