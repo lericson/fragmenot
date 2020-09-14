@@ -38,7 +38,6 @@ color_envmesh_hl       = f(hsva_to_rgba([0.00, 1.00, 0.80, 1.000]))
 color_edge             = f(hsva_to_rgba([0.00, 0.00, 1.00, 0.375]))
 color_edge_skip        = f(hsva_to_rgba([0.00, 0.00, 1.00, 0.125]))
 color_edge_jump        = f(hsva_to_rgba([0.60, 0.40, 0.80, 0.125]))
-color_edge_hyper       = f(hsva_to_rgba([0.60, 0.40, 0.80, 0.125]))
 color_edge_hl          = f(hsva_to_rgba([0.22, 1.00, 0.80, 0.990]))
 color_edge_skip_hl     = f(hsva_to_rgba([0.22, 0.40, 0.80, 0.990]))
 color_edge_jump_hl     = f(hsva_to_rgba([0.50, 1.00, 0.80, 0.990]))
@@ -95,8 +94,6 @@ def reset_roadmap_edges(roadmap):
 
         if dd_uv['jump']:
             line_uv.color = color_edge_jump
-        elif 2 < len(dd_uv['vs']):
-            line_uv.color = color_edge_hyper
         elif dd_uv['skip']:
             line_uv.color = color_edge_skip
 

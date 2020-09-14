@@ -203,8 +203,7 @@ def new(*, mesh, octree, bbox=None, nodes={},
         bin_size:         cfg.param = 1.5,
         regular_grid:     cfg.param = False,
         num_nodes_max:    cfg.param = 2000,
-        z_bounds:         cfg.param = None,
-        hyperconnect:     cfg.param = False):
+        z_bounds:         cfg.param = None):
 
     log.info(f'building prm (max {num_nodes_max} nodes)')
 
@@ -279,16 +278,6 @@ def new(*, mesh, octree, bbox=None, nodes={},
     extract_maximal_component(G)
 
     sensors.update_edge_visibility(G, mesh)
-
-    if hyperconnect:
-        # Important that we copy; otherwise it will create new edges based on
-        # the just-created new edges.
-        log.debug('creating hyperconnects (%d edges before)', len(G.edges))
-        G_ = G.copy()
-        for u, v in G_.edges:
-            for v, w in G_.edges(v):
-                _add_jump(G, u, w, path=[u, v, w], skip=False, jump=False)
-        log.debug('%d edges after hyperconnecting', len(G.edges))
 
     return G
 
@@ -381,6 +370,9 @@ def _shortest_path_memoized(G, u, v):
 
 def _add_jump(G, u, v, *, path=None, **kw):
     "Add jump u-v in G"
+
+    if (u, v) in G.edges:
+        log.warn('adding a jump edge between neighbors, bad idea.')
 
     R         = NodeDataMap(G, 'r')
     Vs        = EdgeDataMap(G, 'vs')
