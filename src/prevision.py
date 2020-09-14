@@ -9,7 +9,6 @@ import numpy as np
 import networkx as nx
 from scipy.spatial import cKDTree
 
-import prm
 import parame
 import sensors
 from tree import NodeDataMap
@@ -33,35 +32,20 @@ def subgraph(roadmap, *, mesh, seen_faces, seen_states,
     R              = NodeDataMap(roadmap, 'r')
     sensors_radius = sensors.visible_between.__kwdefaults__['radius']
 
-    if '_kd' in roadmap.graph:
-        (states, kd_states) = roadmap.graph['_kd']
-    else:
-        states    = list(roadmap)
-        kd_states = cKDTree([R[u] for u in states])
-        roadmap.graph['_kd'] = (states, kd_states)
+    # Build kd tree of roadmap states
+    states    = list(roadmap)
+    kd_states = cKDTree([R[u] for u in states])
 
-    # Find the subset of states in roadmap that are within threshold distance
-    # to seen_states.
-    query_points = [R[u] for u in seen_states]
-
-    inds = kd_states.query_ball_point(query_points, r=max_distance + sensors_radius)
-
+    # Find subset of states that are within threshold distance to seen_states.
+    qry_pts = [R[u] for u in seen_states]
+    inds = kd_states.query_ball_point(qry_pts, r=max_distance + sensors_radius)
     states_aware = {states[j] for inds_i in inds for j in inds_i}
 
     log.debug('querying neighboring faces')
-
-    face_pts       = mesh.triangles_center
-
-    if 'kd_faces' not in mesh._cache.cache:
-        kd_faces = cKDTree(face_pts)
-        mesh._cache.cache['kd_faces'] = kd_faces
-    else:
-        kd_faces = mesh._cache.cache['kd_faces']
-
-    inds = kd_faces.query_ball_point(face_pts[seen_faces], r=max_distance)
-    vis_faces = np.zeros_like(roadmap.graph['vis_faces'])
-    for inds_i in inds:
-        vis_faces[inds_i] = True
+    face_pts    = mesh.triangles_center
+    kd_faces    = cKDTree(face_pts[seen_faces])
+    dists, inds = kd_faces.query(face_pts, distance_upper_bound=max_distance)
+    vis_faces   = dists < max_distance
 
     log.debug('building subgraph')
     roadmap_local = roadmap.copy()
