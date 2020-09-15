@@ -203,13 +203,12 @@ def _update_edge_visibility(G, mesh, *, force=False, seen=None):
     num_faces_sum  = 0
     t              = time.time()
 
-    num_edges = len(G.edges())
-    log.info(f'computing sensor visibility over {num_edges} edges')
+    edges = [(u, v, dd) for (u, v, dd) in G.edges.data()
+             if force or 'vis_faces' not in dd]
 
-    for i, (u, v, data_uv) in enumerate(G.edges.data()):
+    log.info(f'computing sensor visibility over {len(edges)} edges')
 
-        if 'vis_faces' in data_uv and not force:
-            continue
+    for i, (u, v, data_uv) in enumerate(edges):
 
         r_u = G.nodes[u]['r']
         r_v = G.nodes[v]['r']
@@ -224,12 +223,12 @@ def _update_edge_visibility(G, mesh, *, force=False, seen=None):
         num_tested_sum += num_tested
         num_faces_sum  += np.count_nonzero(vis_uv)
 
-        if i > 0 and (i % (max(10, num_edges)//10)) == 0:
+        if i > 0 and (i % (max(10, len(edges))//10)) == 0:
             te = time.time()
             gui.update_vis_faces(visible=vis_faces)
-            log.debug(f'computed sensor reading for edge {i:5d}/{num_edges}. '
-                      f'tested {10*num_tested_sum/num_edges:.2f} rays/edge. ' 
-                      f'hit {10*num_faces_sum/num_edges:.2f} faces/edge. '
+            log.debug(f'computed sensor reading for edge {i:5d}/{len(edges)}. '
+                      f'tested {10*num_tested_sum/len(edges):.2f} rays/edge. ' 
+                      f'hit {10*num_faces_sum/len(edges):.2f} faces/edge. '
                       f'speed {num_tested_sum/(te-t):.5g} rays/sec.')
             num_tested_sum = 0
             num_faces_sum  = 0

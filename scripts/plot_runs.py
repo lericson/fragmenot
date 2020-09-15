@@ -25,14 +25,23 @@ pct_complete = 1e-2*(100.0 - 10.0**(-pct_unexplored_log10))
 
 @dataclass
 class Desc():
-    pathname: str
-    label:    str
-    d:        float
-    x:        NDArray[(Any,), np.float]
-    y:        NDArray[(Any,), np.float]
-    seen:     NDArray[(Any, Any), bool]
-    holes:    NDArray[(Any,),     np.float]
-    mesh:     trimesh.Trimesh
+    pathname:   str
+    label:      str
+    d:          float
+    x:          NDArray[(Any,), np.float]
+    y:          NDArray[(Any,), np.float]
+    seen:       NDArray[(Any, Any), bool]
+    hole_sizes: list
+    hole_poses: list
+    bdry_lens:  list
+    mesh:       trimesh.Trimesh
+
+    @property
+    def holiness(self):
+        return [np.sum((lens_i)[:]) for lens_i in self.bdry_lens]
+        #return [len(sizes_i) - 1 for sizes_i in self.hole_sizes]
+        #return [np.sum(sizes_i) for sizes_i in self.hole_sizes]
+        #return [np.sum(self.mesh.area_faces[~seen_i]) for seen_i in self.seen]
 
 
 def check(x, y):
@@ -88,14 +97,17 @@ def load(pathname):
     if not path.exists(cache_pathname):
         raise RuntimeError('you need to precompute the plot cache')
 
-    dd    = np.load(cache_pathname, allow_pickle=True)
+    dd    = np.load(cache_pathname)
     x     = np.array(dd['x'])
     y     = np.array(dd['y'])
     seen  = np.array(dd['seen'])
-    holes = np.array(dd['holes'])
+    hole_sizes = [hole_size_i[~np.isnan(hole_size_i)] for hole_size_i in dd['holes'][:, :, 0]]
+    hole_poses = [ hole_pos_i[~np.isnan(hole_pos_i)]  for  hole_pos_i in dd['holes'][:, :, 1]]
+    bdry_lens  = [ bdry_len_i[~np.isnan(bdry_len_i)]  for  bdry_len_i in dd['holes'][:, :, 2]]
+
     print(f'n={len(x)}', end=' ', flush=True)
+
     check(x, y)
-    print('cache', end=' ')
 
     # Make sure we start at x = 0.
     if y[0] == 0.0:
@@ -104,13 +116,27 @@ def load(pathname):
         x = np.cat(([0.0], x))
         y = np.cat(([0.0], y))
 
-    print(f'n={x.shape[0]}', end=' ')
     print()
 
     desc = Desc(pathname=pathname, label=f'$d={d:.2f}$', d=d, x=x, y=y,
-                seen=seen, holes=holes, mesh=mesh)
+                seen=seen, mesh=mesh, hole_sizes=hole_sizes,
+                hole_poses=hole_poses, bdry_lens=bdry_lens)
 
     return desc
+
+
+from bisect import bisect_left
+def lerp(X, Y, x):
+    i = bisect_left(X, x)
+    x0, x1 = X[i-1], X[i]
+    y0, y1 = Y[i-1], Y[i]
+    t = (x - x0)/(x1 - x0)
+    y = (1 - t)*y0 + t*y1
+    return y
+
+assert lerp([0, 1], [10, 20], 0.0) == 10.0
+assert lerp([0, 1], [10, 20], 0.5) == 15.0
+assert lerp([0, 1], [10, 20], 1.0) == 20.0
 
 
 @parame.configurable
@@ -139,10 +165,39 @@ def main(*, pathnames=sys.argv[1:],
 
     from scipy.interpolate import interp1d
 
+    #bins = 10
+    #_, bin_edges = np.histogram([h for holes_i in desc.holes for h in holes_i], bins=bins)
+
+    print('lerp me like one of your french girls')
+    for i, d in enumerate(Ds):
+        # Lerp
+        XYs_in  = [(ds.y, ds.holiness) for ds in Ds[d]]
+        x_max   = sorted(X_in[-1] for X_in, Y_in in XYs_in)[-1]
+        h       = x_max/1000
+        X_lerp  = h*np.arange(0, 1001)
+        Y_lerp  = [[lerp(X_in, Y_in, x_lerp) for X_in, Y_in in XYs_in if X_in[0] <= x_lerp <= X_in[-1]] for x_lerp in X_lerp]
+
+        mu_Y    = np.array([np.mean(Y_lerp[i]) for i in range(len(X_lerp))])
+        sigma_Y = np.array([np.std(Y_lerp[i])  for i in range(len(X_lerp))])
+
+        dstr    = f'{d:.2f}' if d < 50.0 else '\infty'
+        label   = f'$d={dstr}, N={len(Ds[d])}$'
+
+        ax = plt.gca()
+        ax.fill_between(X_lerp, mu_Y - sigma_Y, mu_Y + sigma_Y, color=f'C{i}', alpha=0.1)
+        ax.plot(X_lerp, mu_Y, color=f'C{i}', alpha=1.0, label=label)
+
+    plt.title(r'Holiness plot with $\pm 1\sigma$ bound')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    #sys.exit()
+
     if False: # show histogram
         fin_dists = sorted([ds.y[-1] for d in Ds for ds in Ds[d]])
         h, bins = np.histogram(fin_dists, bins=30)
-        for i, d in enumerate(sorted(Ds)):
+        for i, d in enumerate(Ds):
             plt.hist([ds.y[-1] for ds in Ds[d]], bins=bins, alpha=0.5, color=f'C{i}', label=Ds[d][0].label)
         plt.legend()
         plt.tight_layout()
@@ -166,7 +221,7 @@ def main(*, pathnames=sys.argv[1:],
             #plt.show()
 
     from matplotlib import ticker, scale
-    for i, d in enumerate(sorted(Ds)):
+    for i, d in enumerate(Ds):
         X        = np.linspace(0.0, pct_complete, 1000)
         F        = [interp1d(ds.x, ds.y, fill_value=(0.0, ds.y.max())) for ds in Ds[d]]
         FX       = [f(X) for f in F]

@@ -1,10 +1,13 @@
 import sys
 import yaml
+import logging
 import warnings
 from functools import wraps
 from os import path, environ
 from inspect import signature
 
+
+log = logging.getLogger(__name__)
 
 # Environment configuration registry. Indirect so we can replace it.
 _environ = environ
@@ -41,17 +44,18 @@ class Module():
 
     def __getitem__(self, name):
         envvar = format_envvar(self.name, name)
-        if envvar in _environ:
-            return yaml.safe_load(_environ[envvar])
+        for variant in (envvar, envvar.lower()):
+            if variant in _environ:
+                return yaml.safe_load(_environ[variant])
         if name in self.file_config:
             return self.file_config[name]
         raise KeyError(name)
 
     def get(self, name, default=None):
-        envvar = format_envvar(self.name, name)
-        if envvar in _environ:
-            return yaml.safe_load(_environ[envvar])
-        return self.file_config.get(name, default)
+        try:
+            return self[name]
+        except KeyError:
+            return default
 
 
 def get(modname, varname, default=None):
@@ -98,16 +102,13 @@ _file_cfg.update(_load_file_cfg())
 
 @configurable
 def set_profile(*,
-                profile: cfg.param = 'default',
-                verbose: cfg.param = True):
+                profile: cfg.param = 'default'):
     if isinstance(profile, str):
         profile = [profile]
     for prof in profile:
-        if verbose:
-            print('loading profile', prof, file=sys.stderr)
+        log.info('loading profile %s', prof)
         for modname, d in cfg[prof].items():
-            if verbose:
-                print(' ', modname, d, file=sys.stderr)
+            log.info('  %s: %s', modname, d)
             _file_cfg.setdefault(modname, {}).update(d)
 
 

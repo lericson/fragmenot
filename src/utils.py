@@ -2,6 +2,7 @@ import threading
 import logging
 
 import numpy as np
+import networkx as nx
 
 
 log = logging.getLogger(__name__)
@@ -43,6 +44,58 @@ def graph_md5(G):
                     data = f'{prefix}[{k!r}][{kd!r}] = {vd!r}\n'
                     hasher.update(data.encode('utf-8'))
     return hasher.hexdigest()
+
+
+def graph2ndarrays(G):
+
+    nodes = list(G.nodes)
+    edges = list(G.edges)
+
+    node_keys = set().union(*[G.nodes[n].keys() for n in nodes])
+    edge_keys = set().union(*[G.edges[n].keys() for n in edges])
+
+    ret = {'nodes': np.asarray(nodes),
+           'edges': np.asarray(edges)}
+
+    for k in edge_keys:
+        if not k.startswith('_'):
+            ret[f'edges_{k}'] = np.asarray([G.edges[n][k] for n in edges])
+    for k in node_keys:
+        if not k.startswith('_'):
+            ret[f'nodes_{k}'] = np.asarray([G.nodes[n][k] for n in nodes])
+    for k in G.graph:
+        if not k.startswith('_'):
+            ret[f'graph_{k}'] = np.asarray(G.graph[k])
+
+    return ret
+
+
+def ndarrays2graph(*, nodes=[], edges=[], **keys):
+
+    G = nx.Graph(list(edges))
+    G.add_nodes_from(list(nodes))
+
+    for fk, v in keys.items():
+        ktype, k = fk.split('_', 1)
+
+        if ktype == 'edges':
+            assert len(v) == len(edges)
+            for n, v_n in zip(edges, v):
+                G.edges[n][k] = v_n
+
+        elif ktype == 'nodes':
+            assert len(v) == len(nodes)
+            for n, v_n in zip(nodes, v):
+                G.nodes[n][k] = v_n
+
+        elif ktype == 'graph':
+            G.graph[k] = v
+
+        else:
+            raise ValueError(ktype)
+
+    return G
+
 
 
 def format_duration(secs):

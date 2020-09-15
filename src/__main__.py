@@ -2,6 +2,9 @@ import logging
 
 import logcolor
 
+# Needs to happen here in case of log output on import
+logcolor.basic_config(level=logging.DEBUG)
+
 import gui
 import world
 import exploration
@@ -12,7 +15,6 @@ log_format = ('[%(asctime)s] %(filename)s:%(lineno)d '
               '%(levelname)5.5s %(name)s: %(message)s')
 
 def main():
-    logcolor.basic_config(level=logging.DEBUG)
     file_handler = logging.FileHandler(exploration.output_path('run.log'))
     file_handler.setFormatter(logging.Formatter(log_format))
     logging.root.addHandler(file_handler)

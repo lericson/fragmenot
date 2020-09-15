@@ -16,7 +16,7 @@ import prm
 import parame
 import prevision
 import tree_search
-from utils import threadable, format_duration, endswith_cycle
+from utils import threadable, graph2ndarrays, format_duration, endswith_cycle
 
 
 log = logging.getLogger(__name__)
@@ -183,8 +183,14 @@ def run(*, octree, mesh, state=None,
 
     np.savez_compressed(output_path('mesh.npz'),
                         faces=mesh.faces,
-                        vertices=mesh.vertices,
-                        area_faces=mesh.area_faces)
+                        vertices=mesh.vertices)
+
+    if state is None:
+        state = State.new(octree=octree, mesh=mesh)
+        state.update_gui()
+
+    np.savez_compressed(output_path('roadmap.npz'),
+                        **graph2ndarrays(state.roadmap))
 
     gui.activate_layer('visible')
 
@@ -194,18 +200,7 @@ def run(*, octree, mesh, state=None,
 
         log.info('step %d begins', i)
 
-        if state is None:
-            state = State.new(octree=octree, mesh=mesh)
-            state.update_gui()
-
-        else:
-            try:
-                state = step(state)
-            except tree_search.NoPlanFoundError:
-                log.error('unable to find any path, aborting')
-                break
-
-        gui.show_message(f'Step {i} completed.\n'
+        gui.show_message(f'Step {i} begins.\n'
                          f'{100*state.completion:.2f}% explored.\n'
                          f'Travelled {state.distance:.2f} meters.\n'
                          f'{len(state.roadmap.edges())} edges in roadmap.\n'
@@ -214,8 +209,6 @@ def run(*, octree, mesh, state=None,
         gui.save_screenshot(output_path(f'step{i:05d}.png'))
         np.savez(output_path(f'state{i:05d}.npz'), **state.save_dict)
 
-        log.info('step %d ends\n', i)
-
         if not (state.completion < percent_complete/100):
             log.info('exploration complete!')
             break
@@ -223,6 +216,14 @@ def run(*, octree, mesh, state=None,
         if any(endswith_cycle(state.sequence, n=3, k=k) for k in {1,2,3}):
             log.error('exploration stuck in a cycle, aborting')
             break
+
+        try:
+            state = step(state)
+        except tree_search.NoPlanFoundError:
+            log.error('unable to find any path, aborting')
+            break
+
+        log.info('step %d ends\n', i)
 
     else:
         log.error('exploration did not finish in %d steps', num_steps)
