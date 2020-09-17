@@ -246,9 +246,7 @@ class RayMeshIntersector(object):
         return index_tri, index_ray
 
     @log_time
-    def intersects_first(self,
-                         ray_origins,
-                         ray_directions, dists=None):
+    def intersects_first(self, ray_origins, ray_directions, **kwargs):
         """
         Find the index of the first triangle a ray hits.
 
@@ -259,8 +257,6 @@ class RayMeshIntersector(object):
           Origins of rays
         ray_directions : (n, 3) float
           Direction (vector) of rays
-        dists : float or (n,) float
-          Maximum distance for each ray
 
         Returns
         ----------
@@ -271,8 +267,7 @@ class RayMeshIntersector(object):
         ray_origins = np.asanyarray(ray_origins)
         ray_directions = np.asanyarray(ray_directions)
 
-        triangle_index = self._scene.run(ray_origins,
-                                         ray_directions)
+        triangle_index = self._scene.run(ray_origins, ray_directions, **kwargs)
         return triangle_index
 
     def intersects_any(self,
@@ -326,8 +321,7 @@ class _EmbreeWrap(object):
     """
 
     def __init__(self, vertices, faces, scale):
-        scaled = np.array(vertices,
-                          dtype=np.float64)
+        scaled = np.array(vertices, dtype=np.float64, copy=False)
         self.origin = scaled.min(axis=0)
         self.scale = float(scale)
         scaled = (scaled - self.origin) * self.scale
@@ -339,13 +333,13 @@ class _EmbreeWrap(object):
             vertices=scaled.astype(_embree_dtype),
             indices=faces.view(np.ndarray).astype(np.int32))
 
-    def run(self, origins, normals, dists=None, **kwargs):
-        scaled = (np.array(origins,
-                           dtype=np.float64) - self.origin) * self.scale
+    def run(self, origins, normals, max_dists=np.inf, **kwargs):
+        origins = np.array(origins, dtype=np.float64, copy=False)
+        scaled = (origins - self.origin) * self.scale
 
-        if dists is not None:
-            dists = self.scale * dists
+        if max_dists is not None:
+            max_dists = self.scale * max_dists
 
-        return self.scene.run(scaled.astype(_embree_dtype),
-                              normals.astype(_embree_dtype),
-                              dists=dists, **kwargs)
+        return self.scene.intersects_ids(scaled.astype(_embree_dtype),
+                                         normals.astype(_embree_dtype),
+                                         max_dists=max_dists, **kwargs)
