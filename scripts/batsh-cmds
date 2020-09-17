@@ -21,7 +21,6 @@ jobs=(
 
     # Compare tree-like pathing (without PV.)
     "$flags ${rundir}tree_uni       PARAME_PROFILE=[shortrange,pv0000,tree,uniform]      $python $script"
-    "$flags ${rundir}tree_nj        PARAME_PROFILE=[shortrange,pv0000,tree,nojump]       $python $script"
     "$flags ${rundir}tree_gn        PARAME_PROFILE=[shortrange,pv0000,tree,gn]           $python $script"
     "$flags ${rundir}tree_uni_gn    PARAME_PROFILE=[shortrange,pv0000,tree,uniform,gn]   $python $script"
 
