@@ -15,6 +15,7 @@ from libcpp.vector cimport vector
 from libcpp.list cimport list as stlist
 from libcpp.unordered_set cimport unordered_set
 from libcpp.unordered_map cimport unordered_map as hashmap
+from libcpp.limits cimport numeric_limits
 
 import numpy as np
 from networkx.utils import pairwise
@@ -106,10 +107,9 @@ ctypedef stlist[int].const_iterator int_list_const_iterator
 
 
 cdef struct NodeT:
+    int parent
     int s
     int depth
-    int n_child
-    bint skip
     double score
     double dist
     #unsigned char [::1]* seen
@@ -184,16 +184,9 @@ def expand(object T, *, object roadmap,
 
     assert T.root == root
 
-    #cdef    int [::1] S       = np.empty(N + steps, dtype=np.intc)
-    #cdef double [::1] Score   = np.empty(N + steps, dtype=np.float64)
-    #cdef double [::1] Dist    = np.empty(N + steps, dtype=np.float64)
-    #cdef    int [::1] Depth   = np.empty(N + steps, dtype=np.intc)
-    #cdef    int [::1] N_child = np.empty(N + steps, dtype=np.intc)
     cdef unsigned char [:, ::1] Seen = np.empty((N + steps, F), dtype=np.bool)
 
-    #cdef hashmap[int, int_list] Unvisited
     cdef vector[NodeT] Node
-
     cdef hashmap[int, int_list] T_succ
 
     Node.resize(N)
@@ -208,8 +201,9 @@ def expand(object T, *, object roadmap,
         dd = T.nodes[i]
         vis     = dd['seen']
         Seen[i] = vis
-        Node[i] = NodeT(s=dd['s'], score=dd['score'], dist=dd['dist'],
-                        depth=dd['depth'], n_child=dd['n_child'], skip=False,
+        parent = T.pred[i][0] if T.pred[i] else T.root
+        Node[i] = NodeT(parent=parent, s=dd['s'], score=dd['score'],
+                        dist=dd['dist'], depth=dd['depth'],
                         unvisited=(neighbors_i - visited_i))
 
     log.debug('computing weights')
@@ -260,100 +254,62 @@ def expand(object T, *, object roadmap,
     cdef NodeT *node_w
     cdef NodeT *node_root = &Node[root]
 
-    cdef int         best_node   = root
-    cdef vector[int] best_path_T = [root]
-    cdef vector[int] best_path_G = [node_root.s]
-    cdef double      best_score  = node_root.score
-    cdef double gain_v
-    cdef double [::1] face_score_vw = face_score;
+    assert node_root.dist == 0.0
+
+    cdef int          best_node   = root
+    cdef vector[int]  best_path_T = [root]
+    cdef vector[int]  best_path_G = [node_root.s]
+    cdef double       best_score  = node_root.score
+    cdef double       gain_v
+    cdef double [::1] face_score_vw = face_score
 
     # For PS_BFS, set of visited _EDGES_.
     cdef unordered_set[int] visited = {node_root.s}
-    cdef NodeT node = NodeT(0, 0, 0, False, 0.0, 0.0, int_list())
+    cdef NodeT node = NodeT(parent=0, s=0, depth=0, score=0.0, dist=0.0, unvisited=int_list())
+    cdef int search_start = 0
 
-    cdef int_list_iterator it
+    with nogil:
 
-    assert node_root.dist == 0.0
+      for step in range(steps):
 
-    for step in range(steps):
-
-      with nogil:
-
-        # Find a leaf.
-        u = root
-        path_T.clear()
-        path_G.clear()
-
-        # This loop generates a path_T = [..., u], and a successor state s_v of
-        # s_u according to G.
-        while not node_root.skip:
-
-            node_u = &Node[u]
-            path_T.push_back(u)
-            path_G.push_back(node_u.s)
-
-            #print(path_T, path_G)
-
-            if not node_u.unvisited.empty():
-                # The tree node has unvisited neighboring states, create a new
-                # node whose state is one of them.
-                v = Node.size()
-                Node.push_back(node)
-                node_v   = &Node[v]
-                node_v.s = node_u.unvisited.front()
-                node_u.unvisited.pop_front()
-                T_succ[u].push_front(v)
-
-                if path_selection == PS_OURS:
-                    node_v.unvisited = G_adj[node_v.s]
-
-                elif path_selection == PS_BFS:
-                    if 0 < visited.count(node_v.s):
-                        node_v.unvisited.clear()
-                    else:
-                        node_v.unvisited = G_adj[node_v.s]
-                        visited.insert(node_v.s)
-
-                #print('insert', f'{v} (s={node_v.s})')
+        # search_start the index of the first node with unvisited neighbors.
+        for search_start in range(search_start, <int>Node.size()):
+            if not Node[search_start].unvisited.empty():
                 break
 
-            # Find the least explored successor of u in T. This results in
-            # BFS-like behavior.
-            with cython.boundscheck(False), cython.wraparound(False):
-                v   = -1
-                n_v = 0
-                for w in T_succ[u]:
-                    node_w = &Node[w]
-                    #print(' ', f'(node_w.n_child := {node_w.n_child}) < (n_v := {n_v})')
-                    if not node_w.skip and (v == -1 or node_w.n_child < n_v):
-                        v   = w
-                        n_v = Node[v].n_child
+        # Find leaf with smallest d.
+        d = numeric_limits[int].max()
+        u = root
+        for v in range(search_start, <int>Node.size()):
+            #node_v = &Node[v]
+            if not Node[v].unvisited.empty():
+                if Node[v].depth < d:
+                    u = v
+                    d = Node[v].depth
 
-            if v == -1:
-                # u has no unvisited next states in G, and all its successors
-                # in T are unvisitable. Mark u as unvisitable too.
-                node_u.skip = True
-
-                # Undo the two push_back()s at the beginning of this iteration
-                path_T.pop_back()
-                path_G.pop_back()
-
-                # Test if empty in case we marked the root unvisitable.
-                if not path_T.empty():
-                    # Take the last state in the path
-                    u = path_T.back()
-
-                    # Undo its push_back()s too, as they will be on top
-                    path_T.pop_back()
-                    path_G.pop_back()
-
-            else:
-                # We found a successor state v of u, continue path from v.
-                u = v
-
-        else:
-          with gil:
+        # Search finished.
+        if Node[u].unvisited.empty():
             break
+
+        # Construct a new tree node.
+        v = Node.size()
+        Node.push_back(node)
+        node_v = &Node[v]
+        node_u = &Node[u]
+        node_v.parent = u
+        node_v.s = node_u.unvisited.front()
+        node_u.unvisited.pop_front()
+        T_succ[u].push_front(v)
+
+        if path_selection == PS_OURS:
+            node_v.unvisited = G_adj[node_v.s]
+
+        elif path_selection == PS_BFS:
+            if not visited.count(node_v.s):
+                node_v.unvisited = G_adj[node_v.s]
+                visited.insert(node_v.s)
+            else:
+                node_v.unvisited.clear()
 
         # Set inserted node v's attributes
         node_v = &Node[v]
@@ -367,12 +323,17 @@ def expand(object T, *, object roadmap,
         elif score_function == SF_GN:
             node_v.score = (node_u.score * node_u.dist + gain_v) / node_v.dist
 
-        for w in path_T:
-            Node[w].n_child += 1
-
         # Strict inequality ensures that if all nodes are equal (i.e. if no new
         # faces were found), we return the root node.
         if best_score < node_v.score:
+            # Reconstruct path to this node.
+            path_T.resize(node_v.depth, -1)
+            path_G.resize(node_v.depth, -1)
+            x = v
+            while x != root:
+                x = Node[x].parent
+                path_T[Node[x].depth] = x
+                path_G[Node[x].depth] = Node[x].s
             best_score = node_v.score
             best_path_T = path_T
             best_path_T.push_back(v)
@@ -380,18 +341,13 @@ def expand(object T, *, object roadmap,
             best_path_G.push_back(node_v.s)
             best_node = v
 
-        if node_root.n_child >= max_size:
-            break
-
         if step == 0 or ((step+1) % (steps//6)) == 0:
-            with gil:
-                log.debug(f'{node_root.n_child:5d} rollouts in {Node.size():5d} nodes, score: {best_score:.5g}')
-                gui.hilight_roadmap_edges(G, pairwise(best_path_G))
-                gui.wait_draw()
+          with gil:
+            assert -1 not in list(best_path_T)
+            log.debug(f'{Node.size():5d} nodes, score: {best_score:.5g}')
+            gui.hilight_roadmap_edges(G, pairwise(best_path_G))
 
     if path_selection == PS_BFS:
-        if not node_root.skip:
-            log.warn('bfs did not mark root node skip, did not finish search.')
         missed = set(G.nodes) - set(visited)
         if missed:
             log.error('bfs did not visit all nodes. missed: %s', missed)
@@ -403,17 +359,6 @@ def expand(object T, *, object roadmap,
         if missed:
             log.error('bfs did not visit all edges. missed: %s', missed)
 
-    IF test_seen:
-        if not any([np.any(np.asarray(Seen[v]) & ~np.asarray(Seen[root])) for v in range(<int>Node.size())]):
-            if best_node == root:
-                log.warn('did not find any unseen faces')
-            else:
-                log.warn('did not find any unseen faces (but best node is not root?)')
-        elif best_node == root:
-            log.warn('best node is root even though other nodes saw new faces')
-            #best_node = min(T, key=lambda v: G_dists[S[v]])
-            #best_score = scoref(best_node)
-
     T.graph['best_score']     = best_score
     T.graph['best_path_T']    = list(best_path_T)
     T.graph['best_path_G']    = list(best_path_G)
@@ -422,27 +367,26 @@ def expand(object T, *, object roadmap,
 
     log.info('run complete, stats follow')
 
+    log.info('search_start: %s', search_start)
     log.info('  depth: %s', statstr([n.depth     for n in Node]))
     log.info('   dist: %s', statstr([n.dist      for n in Node]))
-    log.info('n_child: %s', statstr([n.n_child   for n in Node]))
     log.info('  score: %s', statstr([n.score     for n in Node]))
     log.info('odegree: %s', statstr([T_succ[i].size() for i in range(<int>Node.size())]))
-    min_depth_unv = min([n.depth for n in Node if not n.unvisited.empty()], default=None)
-    log.info('minimum depth of tree node with unvisited states: %s', min_depth_unv)
-    Num_vis = [0]*10
-    Num_unv = [0]*10
-    for i in range(<int>Node.size()):
-        node_v = &Node[i]
-        Num_vis[node_v.depth] += len(T_succ[i])
-        Num_unv[node_v.depth] += len(node_v.unvisited)
-    for depth, (num_vis, num_unv) in enumerate(zip(Num_vis, Num_unv)):
-        if num_vis + num_unv == 0:
-            break
-        log.info('num visited + unvisited states at depth=%d:%7d + %d', depth, num_vis, num_unv)
-    #log.info('  depth: %s', statstr(list(Depth)))
-    #log.info('n_child: %s', statstr(list(N_child)))
-    #log.info(' degree: %s', statstr(list(map(G.degree, G))))
-    #log.info('balance: %s', statstr([(N_child[T.parent(v)]+1)/(N_child[v]+1) for v in T if v != root]))
-    #log.info('  score: %s', statstr(list(Score)))
+
+    if path_selection == PS_OURS:
+        # Print out stats on how deep search reached
+        Num_vis = [0]*10
+        Num_unv = [0]*10
+        for i in range(<int>Node.size()):
+            node_v = &Node[i]
+            if len(Num_vis) <= node_v.depth:
+                continue
+            Num_vis[node_v.depth] += len(T_succ[i])
+            Num_unv[node_v.depth] += len(node_v.unvisited)
+
+        for depth, (num_vis, num_unv) in enumerate(zip(Num_vis, Num_unv)):
+            if num_vis + num_unv == 0:
+                break
+            log.info('num visited + unvisited states at depth=%d:%7d + %d', depth, num_vis, num_unv)
 
     return T

@@ -103,22 +103,23 @@ def nearest_visible(r, *, mesh, index, margin=0.1, max_dist=np.inf):
     # Ray origin is always r, directed towards each neighbor.
     origins    = np.full_like(R_nearest, r)
     directions = R_nearest - r
-
-    # Compute the distance from r to each neighbor, then adjust the origin
-    # margin meters backwards.
     dists      = np.linalg.norm(directions, axis=1)
+
+    # Adjust the origin *margin* meters backwards.  so that we test for
+    # occlusion a little bit before r, and a little bit after the neighbor's
+    # coordinate.
     origins   -= directions/dists[:, None]*margin
 
+    # Only test rays that are less than max_dist long.
     is_near    = dists < max_dist
     origins    =    origins[is_near]
     directions = directions[is_near]
     nearest    = np.array(nearest, dtype=object)[is_near]
 
-    # dists is used as the maximum ray intersection distance, so increase its
-    # margin too. In effect this means that we test for occlusion a little bit
-    # before r, and a little bit after the neighbor's coordinate.
-    max_dists  = dists + margin
-    hits       = mesh.ray.intersects_first(origins, directions, dists=max_dists)
+    # Run the ray intersection test
+    max_dists = dists + 2*margin
+    hits      = mesh.ray.intersects_first(origins, directions,
+                                          max_dists=max_dists)
 
     # hits is -1 where a ray did not hit a face.
     is_hit     = hits >= 0

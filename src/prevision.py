@@ -30,7 +30,7 @@ def subgraph(roadmap, *, mesh, seen_faces, seen_states,
               np.count_nonzero(seen_faces), len(seen_states))
 
     R              = NodeDataMap(roadmap, 'r')
-    sensors_radius = sensors.visible_between.__kwdefaults__['radius']
+    sensors_radius = sensors.visible_points.__kwdefaults__['radius']
 
     # Build kd tree of roadmap states
     states    = list(roadmap)

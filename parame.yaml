@@ -57,17 +57,19 @@ parame:
             radius: 10000.0
 
     # Our experiment conditions
-    pv000: {prevision: {max_distance:   0.00}}
-    pv010: {prevision: {max_distance:   0.10}}
-    pv025: {prevision: {max_distance:   0.25}}
-    pv050: {prevision: {max_distance:   0.50}}
-    pv100: {prevision: {max_distance:   1.00}}
-    pv200: {prevision: {max_distance:   2.00}}
-    pv300: {prevision: {max_distance:   3.00}}
-    pv400: {prevision: {max_distance:   4.00}}
-    pv500: {prevision: {max_distance:   5.00}}
-    pv800: {prevision: {max_distance:   8.00}}
-    pvinf: {prevision: {max_distance: 100.00}}
+    pv0000: {prevision: {max_distance:   0.00}}
+    pv0010: {prevision: {max_distance:   0.10}}
+    pv0025: {prevision: {max_distance:   0.25}}
+    pv0050: {prevision: {max_distance:   0.50}}
+    pv0100: {prevision: {max_distance:   1.00}}
+    pv0200: {prevision: {max_distance:   2.00}}
+    pv0300: {prevision: {max_distance:   3.00}}
+    pv0400: {prevision: {max_distance:   4.00}}
+    pv0500: {prevision: {max_distance:   5.00}}
+    pv0800: {prevision: {max_distance:   8.00}}
+    pv1200: {prevision: {max_distance:  12.00}}
+    pv1600: {prevision: {max_distance:  16.00}}
+    pvinf:  {prevision: {max_distance: 100.00}}
 
     ours:       {}
     gn:         {tree_search: {score_function: gn}}

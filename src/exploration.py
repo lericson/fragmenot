@@ -160,11 +160,14 @@ def step(state, *,
 @parame.configurable
 def output_path(*args, create=True,
                 runs_dir:   cfg.param = './var/runs',
-                output_dir: cfg.param = f'run_{getpid()}'):
-    output_path = path.join(runs_dir, output_dir)
+                output_dir: cfg.param = 'run_{run_id}'):
+    output_path = path.join(runs_dir, output_dir.format(run_id=getpid()))
     if create:
         makedirs(output_path, exist_ok=True)
     return path.join(output_path, *args)
+
+
+assert not path.exists(output_path(create=False))
 
 
 @threadable
@@ -181,16 +184,19 @@ def run(*, octree, mesh, state=None,
         #f.write('parame file configuration:\n')
         #f.write(''.join(f'{k}: {v}\n' for k, v in parame._file_cfg))
 
+    log.debug('saving mesh to disk')
     np.savez_compressed(output_path('mesh.npz'),
                         faces=mesh.faces,
                         vertices=mesh.vertices)
 
+    log.debug('creating initial state')
     if state is None:
         state = State.new(octree=octree, mesh=mesh)
         state.update_gui()
 
-    np.savez_compressed(output_path('roadmap.npz'),
-                        **graph2ndarrays(state.roadmap))
+    #log.debug('saving roadmap to disk')
+    #np.savez_compressed(output_path('roadmap.npz'),
+    #                    **graph2ndarrays(state.roadmap))
 
     gui.activate_layer('visible')
 
