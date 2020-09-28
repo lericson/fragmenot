@@ -8,14 +8,9 @@ import numpy as np
 from networkx.utils import pairwise
 
 import gui
+import cts
 import parame
 from tree import Tree, EdgeDataMap, NodeDataMap
-
-try:
-    import cts
-except ImportError as e:
-    warnings.warn(f'cts import failed: {e}')
-    cts = None
 
 
 class NoPlanFoundError(Exception):
@@ -76,7 +71,6 @@ def statstr(a):
 @parame.configurable
 def expand(T, *, roadmap,
            steps:          cfg.param = 15000,
-           max_size:       cfg.param = 2.00,
            alpha:          cfg.param = 1e-1,
            lam:            cfg.param = 35e-2,
            K:              cfg.param = 1e3,
@@ -84,16 +78,12 @@ def expand(T, *, roadmap,
            weight_function: cfg.param = 'ours',
            path_selection: cfg.param = 'ours'):
 
-    if isinstance(max_size, float):
-        max_size = int(steps*max_size)
-
     weight_function = cts.weight_functions[weight_function]
     score_function  = cts.score_functions[score_function]
     path_selection  = cts.path_selections[path_selection]
 
-    return cts.expand(T, roadmap=roadmap, steps=steps,
-                      max_size=max_size, alpha=alpha, lam=lam, K=K,
-                      score_function=score_function,
+    return cts.expand(T, roadmap=roadmap, steps=steps, alpha=alpha, lam=lam,
+                      K=K, score_function=score_function,
                       weight_function=weight_function,
                       path_selection=path_selection)
 

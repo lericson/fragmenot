@@ -15,12 +15,12 @@ Create a virtualenv:
 Install dependencies
 
     Ubuntu:
-    apt-get install libspatialindex-dev liboctomap-dev libdynamicedt3d-dev
-    [You need to manually install Intel Embree 3.x., see https://embree.org/]
+    apt-get install libspatialindex-dev liboctomap-dev libdynamicedt3d-dev build-essential python3-dev python3-numpy
+    ./scripts/install-embree.sh
 
     macOS:
     brew install spatialindex octomap embree
-    [You need to manually install dynamicEDT3D.]
+    [You need to manually install dynamicEDT3D?]
 
     All:
     ./env/bin/pip install -r requirements.txt

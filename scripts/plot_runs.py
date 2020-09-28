@@ -41,10 +41,14 @@ class Desc():
     @property
     def boundary_length(self):
         return [np.sum((lens_i)[:]) for lens_i in self.bdry_lens]
-        #return [np.linalg.norm(np.var(poses_i, axis=0)) for poses_i in self.hole_poses]
-        #return [len(sizes_i) - 1 for sizes_i in self.hole_sizes]
-        #return [np.sum(sizes_i) for sizes_i in self.hole_sizes]
-        #return [np.sum(self.mesh.area_faces[~seen_i]) for seen_i in self.seen]
+
+    @property
+    def isoperimetric_ratio(self):
+        areas = self.mesh.area_faces
+        vis   = self.vis_faces
+        L_square = np.array([np.sum(lens_i)**2            for lens_i in self.bdry_lens])
+        A        = np.array([np.sum(areas[vis & ~seen_i]) for seen_i in self.seen])
+        return (1e-3 + L_square) / (1e-3 + A) / 4/np.pi
 
     @property
     def seen_area(self):
@@ -137,8 +141,6 @@ def load(pathname):
         complete = np.cat(([0.0], complete))
         distance = np.cat(([0.0], distance))
 
-    print()
-
     desc = Desc(pathname=pathname, label=f'$d={d:.2f}$', d=d, complete=complete,
                 distance=distance, seen=seen, mesh=mesh, hole_sizes=hole_sizes,
                 hole_poses=hole_poses, bdry_lens=bdry_lens, vis_faces=vis_faces)
@@ -179,15 +181,22 @@ def lerp_stats(Xs, Ys, X_lerp):
     return mu_Y, sigma_Y
 
 
-def label(d, Ds, **kwargs):
+def label(k, Group, **kwargs):
+    if isinstance(k, str):
+        return k
+    d = Group[k][0].d
     dstr = f'{d:.2f}' if d < 50.0 else '\infty'
-    return f'$d={dstr}, N={len(Ds[d])}$'
+    return f'$d={dstr}, N={len(Group[k])}$'
 
 
-def plot_bounds(X, mean, std, *, k=1, label=None, color=None):
+def plot_lerp(X, Y, points, *, k=1, interval=0.05, label=None, color=None):
+    q = (interval, 1 - interval)
+    Y_points    = [lerp_defined(X, Y, pt) for pt in points]
+    Y_quantiles = np.array([np.quantile(Y_pt, q, overwrite_input=True) for Y_pt in Y_points])
+    Y_mean      = np.array([np.mean(Y_pt) for Y_pt in Y_points])
     ax = plt.gca()
-    ax.fill_between(X, mean - k*std, mean + k*std, alpha=0.1, color=color)
-    ax.plot(        X, mean,                       alpha=1.0, color=color, label=label)
+    ax.fill_between(points, Y_quantiles[:, 0], Y_quantiles[:, 1], alpha=0.1, color=color)
+    ax.plot(        points, Y_mean,                               alpha=1.0, color=color, label=label)
 
 
 @parame.configurable
@@ -195,9 +204,17 @@ def main(*, pathnames=sys.argv[1:],
          style:       cfg.param = 'line',
          skip_failed: cfg.param = True):
 
-    Ds = {}
+    Group = {}
+    group = None
+    filter_d = None
 
     for i, pathname in enumerate(pathnames):
+        if pathname.startswith('--group='):
+            group = pathname[8:]
+            continue
+        if pathname.startswith('-d='):
+            filter_d = float(pathname[3:])
+            continue
         print(f'loading {i+1:3d} / {len(pathnames)}: {pathname} ', end='')
         try:
             desc = load(pathname)
@@ -207,12 +224,20 @@ def main(*, pathnames=sys.argv[1:],
             else:
                 print(f'failed: {e}')
                 continue
-        Ds.setdefault(desc.d, []).append(desc)
 
-    if not Ds:
+        if filter_d is not None and not np.isclose(filter_d, desc.d):
+            print('filtered')
+            continue
+        else:
+            print()
+        
+        k = group if group else desc.d
+        Group.setdefault(k, []).append(desc)
+
+    if not Group:
         return
 
-    Ds = {d: Ds[d] for d in sorted(Ds)}
+    Group = {k: Group[k] for k in sorted(Group)}
 
     from scipy.interpolate import interp1d
 
@@ -220,32 +245,32 @@ def main(*, pathnames=sys.argv[1:],
     #_, bin_edges = np.histogram([h for holes_i in desc.holes for h in holes_i], bins=bins)
 
     print('lerp me like one of your french girls')
-    # The domain X for each run is used to compute the lerp domain X_lerp
 
-    for i, d in enumerate(Ds):
-        Xs_in         = [ds.distance for ds in Ds[d]]
+    for i, k in enumerate(Group):
+        Xs_in         = [ds.distance for ds in Group[k]]
         x_max         = sorted(X_in[-1] for X_in in Xs_in)[-1]
         h             = x_max/1000
         X_lerp        = h*np.arange(0, 1001)
-        Ys_in         = [ds.boundary_length for ds in Ds[d]]
+        #Ys_in         = [ds.boundary_length for ds in Group[k]]
+        Ys_in         = [ds.isoperimetric_ratio for ds in Group[k]]
         mu_Y, sigma_Y = lerp_stats(Xs_in, Ys_in, X_lerp)
-        plot_bounds(X_lerp, mu_Y, sigma_Y, color=f'C{i}', label=label(**locals()))
+        plot_lerp(Xs_in, Ys_in, X_lerp, color=f'C{i}', label=label(**locals()))
 
     plt.xlabel('Distance travelled [m]')
-    plt.ylabel('Frontier length [m]')
-    plt.title(r'Frontier length with $\pm 1\sigma$ bound')
+    plt.ylabel('Isoperimetric ratio')
+    plt.title(r'IPR of unseen space as function of distance (95% CI)')
     plt.legend()
     plt.tight_layout()
     plt.show()
 
-    for i, d in enumerate(Ds):
-        Xs_in         = [ds.distance for ds in Ds[d]]
+    for i, k in enumerate(Group):
+        Xs_in         = [ds.distance for ds in Group[k]]
         x_max         = sorted(X_in[-1] for X_in in Xs_in)[-1]
         h             = x_max/1000
         X_lerp        = h*np.arange(0, 1001)
-        Ys_in         = [100*(1 + (1 - thr_complete) - ds.complete) for ds in Ds[d]]
+        Ys_in         = [100*(1 + (1 - thr_complete) - ds.complete) for ds in Group[k]]
         mu_Y, sigma_Y = lerp_stats(Xs_in, Ys_in, X_lerp)
-        plot_bounds(X_lerp, mu_Y, sigma_Y, color=f'C{i}', label=label(**locals()))
+        plot_lerp(Xs_in, Ys_in, X_lerp, color=f'C{i}', label=label(**locals()))
         #plt.plot([0, 100], [mu_Y[-1], mu_Y[-1]], '--', color=f'C{i}', linewidth=1, alpha=0.6)
 
     ax = plt.gca()
@@ -263,34 +288,34 @@ def main(*, pathnames=sys.argv[1:],
     #sys.exit()
 
     if False: # show histogram
-        fin_dists = sorted([ds.distance[-1] for d in Ds for ds in Ds[d]])
+        fin_dists = sorted([ds.distance[-1] for k in Group for ds in Group[k]])
         h, bins = np.histogram(fin_dists, bins=30)
-        for i, d in enumerate(Ds):
-            plt.hist([ds.distance[-1] for ds in Ds[d]], bins=bins, alpha=0.5, color=f'C{i}', label=Ds[d][0].label)
+        for i, k in enumerate(Group):
+            plt.hist([ds.distance[-1] for ds in Group[k]], bins=bins, alpha=0.5, color=f'C{i}', label=Group[k][0].label)
         plt.legend()
         plt.tight_layout()
         plt.show()
 
     if False: # plot histograms
         for completion in (.5, .6, .7, .75, .8, .85, .9, .95, .96, .97, .975, .98, .985, .9875, .99, .998):
-            Ys = [[interp1d(ds.complete, ds.distance)(completion) for ds in Ds[d]] for d in Ds]
-            plt.bar(np.arange(len(Ds)), [np.mean(ys) for ys in Ys], tick_label=list(Ds), yerr=[np.std(ys) for ys in Ys])
+            Ys = [[interp1d(ds.complete, ds.distance)(completion) for ds in Group[k]] for k in Group]
+            plt.bar(np.arange(len(Group)), [np.mean(ys) for ys in Ys], tick_label=list(Group), yerr=[np.std(ys) for ys in Ys])
             plt.title(f'{completion*100:.1f}% completion by distance travelled')
             plt.xlabel('Prevision distance $d / m$')
             plt.ylabel('Distance travelled $s / m$')
             plt.savefig(f'completion{completion*1000:.0f}.png')
             plt.show()
 
-            #Ys = [[ds.distance[-1] for ds in Ds[d]] for d in Ds]
-            #plt.bar(np.arange(len(Ds)), [np.mean(ys) for ys in Ys], tick_label=list(Ds), yerr=[np.std(ys) for ys in Ys])
+            #Ys = [[ds.distance[-1] for ds in Group[k]] for k in Group]
+            #plt.bar(np.arange(len(Group)), [np.mean(ys) for ys in Ys], tick_label=list(Group), yerr=[np.std(ys) for ys in Ys])
             #plt.title('100% completion by distance travelled')
             #plt.xlabel('Prevision distance $d / m$')
             #plt.ylabel('Distance travelled $s / m$')
             #plt.show()
 
-    for i, d in enumerate(Ds):
+    for i, k in enumerate(Group):
         X        = np.linspace(0.0, thr_complete, 1000)
-        F        = [interp1d(ds.complete, ds.distance, fill_value=(0.0, ds.distance.max())) for ds in Ds[d]]
+        F        = [interp1d(ds.complete, ds.distance, fill_value=(0.0, ds.distance.max())) for ds in Group[k]]
         FX       = [f(X) for f in F]
         mu_FX    = np.mean(FX, axis=0)
         sigma_FX = np.std(FX, axis=0)
@@ -311,7 +336,7 @@ def main(*, pathnames=sys.argv[1:],
             ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f'{x/2/np.pi*100:.0f}%'))
         else:
             raise ValueError(style)
-        #for j, ds in enumerate(Ds[d]):
+        #for j, ds in enumerate(Group[k]):
         #    label = ds.label if j == 0 else None
         #    #plt.plot(FX[j], X, label=label, color=f'C{i}')
         #    plt.plot(ds.complete, ds.distance, label=label, color=f'C{i}')

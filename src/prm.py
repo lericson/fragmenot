@@ -228,7 +228,7 @@ def new(*, mesh, octree, bbox=None, nodes={},
                                    bbox_max,
                                    size=(2*num_nodes_max, 3))
     else:
-        s = cfg['max_dist']
+        s = cfg['max_dist'] / cfg.get('regular_grid_k', 1)
         log.debug(f'creating regular grid coordinates (side: {s})')
         # In a triangularly tessellated grid of side s, the spacing needs to be
         # adjusted by sqrt(3)/2.

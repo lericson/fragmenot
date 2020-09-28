@@ -68,18 +68,19 @@ def statstr(a):
 cdef double [::1] compute_covis_area(const unsigned char [:, :] covis,
                                      const unsigned char [:] vis,
                                      const double [:] area,
-                                     double [::1] covis_area):
+                                     double [::1] covis_area) nogil:
     cdef double area_i
+    assert covis_area.shape[0] == covis.shape[0]
+    assert area.shape[0]       == covis.shape[0]
 
-    with nogil:
-        for i in range(covis.shape[0]):
-            area_i = 0.0
-            if vis[i]:
-                for j in range(covis.shape[1]):
-                    if vis[j] and covis[i, j]:
-                        area_i += area[j]
+    for i in range(covis.shape[0]):
+        area_i = 0.0
+        if vis[i]:
+            for j in range(covis.shape[1]):
+                if vis[j] and covis[i, j]:
+                    area_i += area[j]
 
-            covis_area[i] = 12*sqrt(area_i)
+        covis_area[i] = 12*sqrt(area_i)
 
     return covis_area
 
@@ -138,7 +139,6 @@ cdef cppclass EdgeExistsPredicate:
 # all parameters.
 def expand(object T, *, object roadmap,
            int    steps,
-           int    max_size,
            double alpha,
            double lam,
            double K,
@@ -246,8 +246,7 @@ def expand(object T, *, object roadmap,
     log.info(' face_score: %s', statstr(face_score[vis_unseen]))
     #log.info('          d: %s', statstr(list(D.values())))
 
-    log.info('expanding tree %d steps (initial size: %d, max size: %d)',
-             steps, len(T), max_size)
+    log.info('expanding tree %d steps')
 
     cdef NodeT *node_u
     cdef NodeT *node_v
@@ -286,6 +285,8 @@ def expand(object T, *, object roadmap,
                 if Node[v].depth < d:
                     u = v
                     d = Node[v].depth
+                if Node[search_start].depth < Node[v].depth:
+                    break
 
         # Search finished.
         if Node[u].unvisited.empty():

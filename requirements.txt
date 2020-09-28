@@ -1,6 +1,6 @@
 -e git+file://${PWD}@726d83c54a7216914112aa18863e41ba94789290#egg=cython
 -e git+file://${PWD}@5ea42d5280b72c892bd0273bb1bfb6db0eef919e#egg=trimesh
--e git+file://${PWD}@b06847194c4dbb1d25f2d33d52ef9f120c577d38#egg=pyembree
+-e git+file://${PWD}@01766e82204b86d8d4bd77e40308d4ea1d99c551#egg=pyembree
 -e git+file://${PWD}@da8d48a7b4b46854e4c210e083fad198ff8018a0#egg=octomap_python
 autoprop==1.0.1
 cycler==0.10.0
@@ -16,7 +16,6 @@ matplotlib==3.2.2
 more-itertools==8.3.0
 networkx==2.4
 nptyping==1.3.0
-numpy==1.18.5
 packaging==20.4
 Pillow==7.1.2
 pyflakes==2.2.0

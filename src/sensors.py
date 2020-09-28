@@ -27,19 +27,33 @@ _sensor_directions = _sensor_geometry.vertices
 
 
 @parame.configurable
-def visible_points(mesh, R, *, radius: cfg.param = 2.0):
+def visible_points(mesh, R, *,
+                   radius:              cfg.param = 2.0,
+                   max_incidence_angle: cfg.param = np.radians(85)):
     "Union of faces visible at each R[i]."
 
     directions = _sensor_directions
     min_dists  = np.full(mesh.faces.shape[0], np.inf)
-    hits       = np.empty(directions.shape[0], dtype=np.int32)
+    rays_face  = np.empty(directions.shape[0], dtype=np.int32)
     num_tested = 0
+    cos_incid  = np.cos(max_incidence_angle)
 
     for origin in R:
         num_tested += len(directions)
-        #origins[:, :] = origin
-        mesh.ray.intersects_first([origin], directions, max_dists=radius, out=hits)
-        faces = hits[hits >= 0]
+
+        mesh.ray.intersects_first([origin], directions, max_dists=radius, out=rays_face)
+
+        # Mask rays that hit
+        rays_hit = rays_face >= 0
+
+        # Consider only hits with incidence angle below threshold
+        rays_dir   = directions[rays_hit]
+        faces_norm = mesh.face_normals[rays_face[rays_hit]]
+        rays_hit[rays_hit] = np.sum(rays_dir * faces_norm, axis=1) < cos_incid
+
+        # Faces hit by a ray
+        faces = rays_face[rays_hit]
+
         dists_hits = np.linalg.norm(origin - mesh.triangles_center[faces], axis=1)
         min_dists[faces] = np.min((min_dists[faces], dists_hits), axis=0)
 
@@ -53,8 +67,8 @@ def sample_points(r_u, r_v, *, step_size: cfg.param = 0.5):
     dist   = np.linalg.norm(r_v - r_u)
     steps  = int(dist / step_size) + 1
     points = np.linspace(r_u, r_v, steps)
-    assert np.allclose(points[0],  r_u)
-    assert np.allclose(points[-1], r_v)
+    assert np.allclose(points[0],  r_u), (dist, steps, points)
+    assert np.allclose(points[-1], r_v), (dist, steps, points)
     return points
 
 

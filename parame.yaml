@@ -38,6 +38,13 @@ parame:
     # Profiles are an easy way to switch between option sets.
     profile: shortrange
 
+    shorter:
+        prm:
+            max_dist: 1.0
+        sensors:
+            radius: 3.0
+            step_size: 0.25
+
     shortrange:
         prm:
             max_dist: 1.5

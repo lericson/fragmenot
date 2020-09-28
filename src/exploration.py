@@ -35,11 +35,22 @@ class State():
     @parame.configurable
     def new(cls, *, mesh, octree,
             start_position: cfg.param = 'random'):
-        seen    = np.zeros(mesh.faces.shape[0], dtype=bool)
         start   = -1
         roadmap = prm.new(mesh=mesh, octree=octree)
         prm.insert_random(roadmap, start)
-        seen   |= np.all([vis for _, _, vis in roadmap.edges(start, data='vis_faces')], axis=0)
+
+        vis_faces   = roadmap.graph['vis_faces']
+        covis_faces = roadmap.graph['covis_faces']
+        area_faces  = roadmap.graph['area_faces']
+        roadmap.graph['vis_faces']   = vis_faces[vis_faces]
+        roadmap.graph['covis_faces'] = covis_faces[vis_faces, :][:, vis_faces]
+        roadmap.graph['area_faces']  = area_faces[vis_faces]
+        mesh.update_faces(vis_faces)
+        for u,v,dd_uv in roadmap.edges.data():
+            dd_uv['vis_faces'] = dd_uv['vis_faces'][vis_faces]
+        gui.reset_layers()
+
+        seen    = np.all([vis for _, _, vis in roadmap.edges(start, data='vis_faces')], axis=0)
         return cls(mesh, seen, roadmap, start, sequence=[start])
 
     @property

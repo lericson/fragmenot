@@ -1,5 +1,5 @@
 #!/bin/sh
-host=science.lericson.se
+host=science2.lericson.se
 module=covis19
 source="rsync://${host}/${module}/var"
 target=rsync

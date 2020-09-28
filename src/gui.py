@@ -177,6 +177,15 @@ def activate_layer(layer):
 
 
 @mock_when_headless
+def reset_layers():
+    _c.layer   = 'visible'
+    _c.layers  = {'visible': _c.envmesh.visual.face_colors,
+                  'score': _c.envmesh.visual.face_colors.copy()}
+    update_vis_faces()
+    activate_layer('visible')
+
+
+@mock_when_headless
 def update_position(position):
     transform = translation_matrix(position - _c.sphere_position)
     _c.sphere_position = position
@@ -332,12 +341,8 @@ def init(envmesh, title=None, *,
     _c.scene   = make_scene(mesh=envmesh)
     _c.viewer  = make_viewer(_c.scene, caption=title, vsync=vsync)
     _c.follow  = follow
-    _c.layer   = 'visible'
-    _c.layers  = {'visible': _c.envmesh.visual.face_colors,
-                  'score': _c.envmesh.visual.face_colors.copy()}
 
-    update_vis_faces()
-    activate_layer('visible')
+    reset_layers()
 
     if minimized:
         _c.viewer.minimize()
