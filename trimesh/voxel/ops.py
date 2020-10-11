@@ -127,19 +127,13 @@ def matrix_to_marching_cubes(matrix, pitch=1.0):
                         mode='constant',
                         constant_values=(1))
 
-    # pick between old and new API
-    if hasattr(measure, 'marching_cubes_lewiner'):
-        func = measure.marching_cubes_lewiner
-    else:
-        func = measure.marching_cubes
-
     # Run marching cubes.
     pitch = np.asanyarray(pitch)
     if pitch.size == 1:
         pitch = (pitch,) * 3
-    meshed = func(volume=rev_matrix,
-                  level=.5,  # it is a boolean voxel grid
-                  spacing=pitch)
+    meshed = measure.marching_cubes(volume=rev_matrix,
+                                    level=.5,  # it is a boolean voxel grid
+                                    spacing=pitch)
 
     # allow results from either marching cubes function in skimage
     # binaries available for python 3.3 and 3.4 appear to use the classic
