@@ -1,8 +1,8 @@
 #!/usr/bin/make -f 
 
-python ?= python3
+python ?= ./env/bin/python3
 var  ?= var
-pat  := $(var)/runs_*/run_*
+pat  ?= $(var)/runs*/run_*
 runs := $(wildcard $(pat))
 
 MAKEFLAGS += --keep-going
@@ -12,10 +12,10 @@ export
 
 $(info Pattern $(pat) matches $(words $(runs)) runs)
 
-%/.plot_cache.npz: %/environ.yaml %/mesh.npz
+%/.plot_cache_v2.npz: %/environ.yaml %/mesh.npz
 	$(python) ./scripts/precompute_plot_cache.py $(@D) 
 
-all: $(runs:%=%/.plot_cache.npz)
+all: $(runs:%=%/.plot_cache_v2.npz)
 	@echo done
 
 .PHONY: all

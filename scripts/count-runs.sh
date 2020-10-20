@@ -2,6 +2,8 @@
 
 var="${var-var}"
 
+shopt -s nullglob
+
 while getopts "d:" opt; do
   case "$opt" in
     d) var="${OPTARG%/}";;

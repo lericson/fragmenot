@@ -16,7 +16,7 @@ import trimesh
 
 import gui
 import parame
-from utils import graph_md5
+from utils import graph_md5, dict_md5
 
 
 cfg = parame.Module(__name__)
@@ -66,9 +66,9 @@ def visible_points(mesh, R, *,
 def sample_points(r_u, r_v, *, step_size: cfg.param = 0.5):
     dist   = np.linalg.norm(r_v - r_u)
     steps  = int(dist / step_size) + 1
-    points = np.linspace(r_u, r_v, steps)
-    assert np.allclose(points[0],  r_u), (dist, steps, points)
-    assert np.allclose(points[-1], r_v), (dist, steps, points)
+    points = np.linspace(r_u, r_v, max(2, steps))
+    assert np.allclose(points[0],  r_u), (dist, steps, step_size, points)
+    assert np.allclose(points[-1], r_v), (dist, steps, step_size, points)
     return points
 
 
@@ -156,7 +156,12 @@ def update_edge_visibility(G, mesh, *, force=False, seen=None,
                            cache_path: cfg.param = './var/cache'):
     "Caching wrapper for _update_edge_visibility"
 
-    cache_filename = f'edge_vis_{graph_md5(G)}_{_sensor_directions.md5()}_{mesh.md5()}.npz'
+    cache_variant = {'mesh': mesh.md5(),
+                     'graph': graph_md5(G),
+                     'sensor': _sensor_directions.md5(),
+                     'visible_points': dict_md5(visible_points.__kwdefaults__),
+                     'sample_points':  dict_md5(sample_points.__kwdefaults__)}
+    cache_filename = f'edge_vis_{dict_md5(cache_variant)}.npz'
     cache_pathname = path.join(cache_path, cache_filename)
 
     if load_cache and path.exists(cache_pathname):

@@ -1,0 +1,54 @@
+#!./env/bin/python3
+import logging
+
+import logcolor
+
+# Needs to happen here in case of log output on import
+logcolor.basic_config(level=logging.DEBUG)
+
+import gui
+import world
+import exploration
+from utils import threadable
+
+
+log = logging.getLogger(__name__)
+log_format = ('[%(asctime)s] %(filename)s:%(lineno)d '
+              '%(levelname)5.5s %(name)s: %(message)s')
+
+
+class default_namespace:
+    import numpy as np
+    import prm, exploration, tree_search, world, parame
+
+
+@threadable
+def repl(**local):
+    import code
+    ctx = default_namespace.__dict__.copy()
+    ctx.update(local)
+    code.interact(local=ctx)
+    gui.close()
+
+
+def main():
+    file_handler = logging.FileHandler(exploration.output_path('run.log'))
+    file_handler.setFormatter(logging.Formatter(log_format))
+    logging.root.addHandler(file_handler)
+    logging.getLogger('trimesh').setLevel(logging.INFO)
+    logging.getLogger('matplotlib').setLevel(logging.INFO)
+
+    octree, mesh = world.load()
+
+    if gui.cfg.get('headless', not gui.has_pyglet):
+        repl.run(octree=octree, mesh=mesh)
+
+    else:
+        gui.init(mesh, title=exploration.output_path())
+        t = repl.thread(octree=octree, mesh=mesh, daemon=True)
+        t.start()
+        gui.run()
+
+
+if __name__ == '__main__':
+    main()

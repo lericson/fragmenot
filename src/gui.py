@@ -3,6 +3,7 @@
 import time
 import logging
 import threading
+import pathlib
 
 import trimesh
 import trimesh.viewer
@@ -35,14 +36,14 @@ color_envmesh_aware    = f(hsva_to_rgba([0.70, 1.00, 0.80, 1.000]))
 color_envmesh_seen     = f(hsva_to_rgba([0.33, 1.00, 0.80, 1.000]))
 color_envmesh_hl       = f(hsva_to_rgba([0.00, 1.00, 0.80, 1.000]))
 
-color_edge             = f(hsva_to_rgba([0.00, 0.00, 1.00, 0.375]))
-color_edge_skip        = f(hsva_to_rgba([0.00, 0.00, 1.00, 0.125]))
-color_edge_jump        = f(hsva_to_rgba([0.60, 0.40, 0.80, 0.125]))
-color_edge_hl          = f(hsva_to_rgba([0.22, 1.00, 0.80, 0.990]))
-color_edge_skip_hl     = f(hsva_to_rgba([0.22, 0.40, 0.80, 0.990]))
+color_edge             = f(hsva_to_rgba([0.00, 0.00, 0.80, 0.200]))
+color_edge_seen        = f(hsva_to_rgba([0.00, 0.00, 0.60, 0.125]))
+color_edge_jump        = f(hsva_to_rgba([0.60, 1.00, 0.80, 0.125]))
+color_edge_hl          = f(hsva_to_rgba([0.22, 0.90, 0.90, 0.990]))
+color_edge_seen_hl     = f(hsva_to_rgba([0.22, 0.90, 0.70, 0.990]))
 color_edge_jump_hl     = f(hsva_to_rgba([0.50, 1.00, 0.80, 0.990]))
 
-color_trajectory_edge  = f(hsva_to_rgba([0.07, 1.00, 1.00, 0.990]))
+color_edge_visited     = f(hsva_to_rgba([0.07, 1.00, 1.00, 0.990]))
 
 color_position_sphere  = f(hsva_to_rgba([0.07, 1.00, 1.00, 0.700]))
 
@@ -51,7 +52,7 @@ _c = type('Context', (), {})()
 
 
 @parame.configurable
-def mock_when_headless(f, *,
+def noop_when_headless(f, *,
                        headless: cfg.param = not has_pyglet):
     "Decorator replaces function with a no-op when in headless mode."
     if headless:
@@ -59,7 +60,7 @@ def mock_when_headless(f, *,
     return f
 
 
-@mock_when_headless
+@noop_when_headless
 @parame.configurable
 def update_roadmap(roadmap):
 
@@ -82,7 +83,7 @@ def update_roadmap(roadmap):
         path.vertices = np.array(verts)
 
 
-@mock_when_headless
+@noop_when_headless
 def reset_roadmap_edges(roadmap):
     for u, v, dd_uv in roadmap.edges.data():
 
@@ -94,11 +95,13 @@ def reset_roadmap_edges(roadmap):
 
         if dd_uv['jump']:
             line_uv.color = color_edge_jump
-        elif dd_uv['skip']:
-            line_uv.color = color_edge_skip
+        elif dd_uv['visited']:
+            line_uv.color = color_edge_visited
+        elif dd_uv['seen']:
+            line_uv.color = color_edge_seen
 
 
-@mock_when_headless
+@noop_when_headless
 def hilight_roadmap_edges(roadmap, edges, reset=True):
     if reset:
         reset_roadmap_edges(roadmap)
@@ -116,16 +119,16 @@ def hilight_roadmap_edges(roadmap, edges, reset=True):
                 log.error(f'edge {w}-{w_} does not exist')
                 continue
             dd_ww_ = roadmap.edges[w, w_]
-            if dd_ww_['skip']:
-                clr = color_edge_skip_hl
+            if dd_ww_['seen']:
+                clr = color_edge_seen_hl
             else:
                 clr = color_edge_hl
             dd_ww_['_line'].color = color_edge_hl
 
         if dd_uv['jump'] or 2 < len(dd_uv['vs']):
             clr = color_edge_jump_hl
-        elif dd_uv['skip']:
-            clr = color_edge_skip_hl
+        elif dd_uv['seen']:
+            clr = color_edge_seen_hl
         else:
             clr = color_edge_hl
 
@@ -134,7 +137,7 @@ def hilight_roadmap_edges(roadmap, edges, reset=True):
         assert dd_uv['_line'] in list(_c.roadmap_path.entities)
 
 
-@mock_when_headless
+@noop_when_headless
 def update_vis_faces(*, visible=None, aware=None, seen=None, hilight=None):
     if visible is None: visible = np.zeros(_c.envmesh.faces.shape[0], dtype=bool)
     if aware is None:   aware   = np.zeros_like(visible)
@@ -145,17 +148,19 @@ def update_vis_faces(*, visible=None, aware=None, seen=None, hilight=None):
     _c.layers['visible'][aware]   = color_envmesh_aware
     _c.layers['visible'][seen]    = color_envmesh_seen
     _c.layers['visible'][hilight] = color_envmesh_hl
+    _update_if_active('visible')
     #_c.hl_faces_base_color = _c.envmesh.visual.face_colors.copy()
 
 
-@mock_when_headless
+@noop_when_headless
 def hilight_vis_faces(faces):
     #if _c.hl_faces_base_color is not None:
     #    _c.envmesh.visual.face_colors[:] = _c.hl_faces_base_color
     _c.layers['visible'][faces] = color_envmesh_hl
+    _update_if_active('visible')
 
 
-@mock_when_headless
+@noop_when_headless
 def update_face_hsva(*, layer, h, s=1.0, v=1.0, a=1.0):
     N = _c.envmesh.faces.shape[0]
     h, s, v, a = np.atleast_1d(h, s, v, a)
@@ -165,9 +170,17 @@ def update_face_hsva(*, layer, h, s=1.0, v=1.0, a=1.0):
     hsva[:, 2] = v
     hsva[:, 3] = a
     _c.layers[layer][:] = (255*hsva_to_rgba(hsva)).astype(np.uint8)
+    _update_if_active(layer)
 
 
-@mock_when_headless
+@noop_when_headless
+def _update_if_active(layer):
+    if _c.layer == layer and _c.layers[layer] is not _c.envmesh.visual.face_colors:
+        _c.envmesh.visual.face_colors[:] = _c.layers[layer]
+        _c.layers[layer] = _c.envmesh.visual.face_colors
+
+
+@noop_when_headless
 def activate_layer(layer):
     data                = _c.layers[layer].copy()
     _c.layers[_c.layer] = _c.layers[_c.layer].copy()
@@ -176,16 +189,29 @@ def activate_layer(layer):
     _c.layer            = layer
 
 
-@mock_when_headless
-def reset_layers():
-    _c.layer   = 'visible'
-    _c.layers  = {'visible': _c.envmesh.visual.face_colors,
-                  'score': _c.envmesh.visual.face_colors.copy()}
-    update_vis_faces()
-    activate_layer('visible')
+@noop_when_headless
+@parame.configurable
+def reset_layers(*, default_layer: cfg.param = 'visible'):
+    with _c.viewer.lock:
+        current_layer = _c.envmesh.visual.face_colors
+        _c.layer   = default_layer
+        _c.layers  = {'visible': current_layer.copy(),
+                      'score':   current_layer.copy()}
+        _c.layers[default_layer] = current_layer
+        _update_if_active(default_layer)
 
 
-@mock_when_headless
+@noop_when_headless
+def remove_faces(removed_faces):
+    mesh = _c.envmesh
+    removed_submesh, = mesh.submesh(np.nonzero(removed_faces))
+    removed_submesh.visual.face_colors[:] = color_envmesh
+    mesh.update_faces(~removed_faces)
+    reset_layers()
+    _c.scene.add_geometry(removed_submesh)
+
+
+@noop_when_headless
 def update_position(position):
     transform = translation_matrix(position - _c.sphere_position)
     _c.sphere_position = position
@@ -195,17 +221,7 @@ def update_position(position):
         _c.scene.camera_transform[...]         = _c.viewer.view['ball'].pose
 
 
-@mock_when_headless
-def update_trajectory(positions):
-    v = range(len(positions))
-    with _c.viewer.lock:
-        path = _c.trajectory_path
-        path.entities = [LineEntity(points=p) for p in zip(v[:-1], v[1:])]
-        path.vertices = positions
-        path.colors   = [color_trajectory_edge]*len(path.entities)
-
-
-@mock_when_headless
+@noop_when_headless
 def wait_draw(timeout=1.0):
     _c.viewer._begin_draw.clear()
     if not _c.viewer._begin_draw.wait(timeout=timeout):
@@ -216,7 +232,7 @@ def wait_draw(timeout=1.0):
         log.warn('wait_draw timed out (end draw)')
 
 
-@mock_when_headless
+@noop_when_headless
 def save_screenshot(fn):
     log.info('saving screenshot: %s', fn)
     with _c.viewer._screenshot_lock:
@@ -225,7 +241,7 @@ def save_screenshot(fn):
         wait_draw(timeout=10.0)
 
 
-@mock_when_headless
+@noop_when_headless
 def show_message(*a, **k):
     _c.viewer.show_message(*a, **k)
 
@@ -260,7 +276,7 @@ class SceneViewer(BaseSceneViewer):
             self._begin_draw.set()
             super().on_draw()
             if self._screenshot_fn is not None:
-                self.save_image(self._screenshot_fn)
+                self.save_image(str(self._screenshot_fn))
                 self._screenshot_fn = None
             self._end_draw.set()
 
@@ -274,11 +290,20 @@ class SceneViewer(BaseSceneViewer):
         elif sym == key.F:
             _c.follow = not _c.follow
             self.show_message(f'Following: {_c.follow}', key='follow')
+        elif sym == key.S:
+            for i in range(1000):
+                self._screenshot_fn = pathlib.Path(f'screenshot-{i:04d}.png')
+                if not self._screenshot_fn.exists():
+                    break
+            self.show_message(f'Saving to {self._screenshot_fn}', key='screenshot')
         else:
             with self.lock:
                 super().on_key_press(sym, mods)
 
     def _update_hud(self):
+        if cfg.get('hide_messages', False):
+            self._hud.text = ''
+            return
         super()._update_hud()
         t_now = time.time()
         self._msgs = {key: (t, text) for key, (t, text) in self._msgs.items() if t_now < t}
@@ -308,8 +333,7 @@ def make_viewer(scene, *,
         kw['callback'] = lambda scene: None
         kw['callback_period'] = 1/8
 
-    viewer = SceneViewer(scene, resolution=resolution,
-                         start_loop=False, **kw)
+    viewer = SceneViewer(scene, resolution=resolution, start_loop=False, **kw)
     #viewer.reset_view(flags=dict(cull=True, grid=True, wireframe=True))
     viewer.reset_view(flags=dict(perspective=perspective))
 
@@ -330,13 +354,14 @@ keyboard shortcuts:
     return viewer
 
 
-@mock_when_headless
+@noop_when_headless
 @parame.configurable
 def init(envmesh, title=None, *,
          follow:    cfg.param = False,
          vsync:     cfg.param = True,
          minimized: cfg.param = False):
 
+    envmesh    = envmesh.copy()
     _c.envmesh = envmesh
     _c.scene   = make_scene(mesh=envmesh)
     _c.viewer  = make_viewer(_c.scene, caption=title, vsync=vsync)

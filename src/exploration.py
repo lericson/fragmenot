@@ -33,25 +33,17 @@ class State():
 
     @classmethod
     @parame.configurable
-    def new(cls, *, mesh, octree,
+    def new(cls, *, mesh, octree, start=-1,
             start_position: cfg.param = 'random'):
-        start   = -1
-        roadmap = prm.new(mesh=mesh, octree=octree)
-        prm.insert_random(roadmap, start)
+        rd = prm.new(mesh=mesh, octree=octree)
+        prm.remove_invisible_faces(rd)
+        mesh.update_faces(~rd.graph['removed_faces'])
+        gui.remove_faces(rd.graph['removed_faces'])
+        prm.insert(rd, start, position=start_position)
 
-        vis_faces   = roadmap.graph['vis_faces']
-        covis_faces = roadmap.graph['covis_faces']
-        area_faces  = roadmap.graph['area_faces']
-        roadmap.graph['vis_faces']   = vis_faces[vis_faces]
-        roadmap.graph['covis_faces'] = covis_faces[vis_faces, :][:, vis_faces]
-        roadmap.graph['area_faces']  = area_faces[vis_faces]
-        mesh.update_faces(vis_faces)
-        for u,v,dd_uv in roadmap.edges.data():
-            dd_uv['vis_faces'] = dd_uv['vis_faces'][vis_faces]
-        gui.reset_layers()
+        seen = np.all([vis_uv for _, _, vis_uv in rd.edges(start, data='vis_faces')], axis=0)
 
-        seen    = np.all([vis for _, _, vis in roadmap.edges(start, data='vis_faces')], axis=0)
-        return cls(mesh, seen, roadmap, start, sequence=[start])
+        return cls(mesh, seen, rd, start, sequence=[start])
 
     @property
     def trajectory(self) -> list:
@@ -84,7 +76,6 @@ class State():
     def update_gui(self, *, update_vis_faces=True):
         gui.update_roadmap(self.roadmap)
         gui.update_position(self.position)
-        gui.update_trajectory(self.trajectory)
         if update_vis_faces:
             visible = self.roadmap.graph['vis_faces']
             gui.update_vis_faces(visible=visible, seen=self.seen_faces)
@@ -144,7 +135,16 @@ def step(state, *,
     vs = roadmap_.edges[node, node_]['vs']
     vs = vs if vs[0] == node else vs[::-1]
     assert vs[0] == node and vs[-1] == node_
+
+    # This makes it so taking a jump edge only moves one step along it.
+    vs    = vs[:2]
+    node_ = vs[-1]
+
     seq_ = seq + vs[1:]
+
+    for u, v in pairwise(vs):
+        roadmap_local.edges[u, v]['visited'] = True
+        roadmap_.edges[u, v]['visited'] = True
 
     del node, seen, seq, state
 
@@ -156,14 +156,15 @@ def step(state, *,
 
     state_.update_gui(update_vis_faces=False)
     gui.update_roadmap(roadmap_local)
-    gui.hilight_roadmap_edges(roadmap_local, pairwise(path))
+    gui.hilight_roadmap_edges(roadmap_local, pairwise(path[0:]))
     gui.update_vis_faces(visible=roadmap_.graph['vis_faces'],
                          aware=roadmap_local.graph['vis_faces'],
                          seen=seen_,
                          hilight=vis_path & ~seen_)
 
     log.info('new state %s: %s', state_.node, state_.position)
-    log.info('explored %.2f%% of visible faces', 100*state_.completion)
+    log.info('completed %.2f%%', 100*state_.completion)
+    log.info('travelled %.2f meters', state_.distance)
 
     return state_
 
@@ -195,21 +196,19 @@ def run(*, octree, mesh, state=None,
         #f.write('parame file configuration:\n')
         #f.write(''.join(f'{k}: {v}\n' for k, v in parame._file_cfg))
 
-    log.debug('saving mesh to disk')
-    np.savez_compressed(output_path('mesh.npz'),
-                        faces=mesh.faces,
-                        vertices=mesh.vertices)
-
     log.debug('creating initial state')
     if state is None:
         state = State.new(octree=octree, mesh=mesh)
         state.update_gui()
 
+    log.debug('saving mesh to disk')
+    np.savez_compressed(output_path('mesh.npz'),
+                        faces=mesh.faces,
+                        vertices=mesh.vertices)
+
     #log.debug('saving roadmap to disk')
     #np.savez_compressed(output_path('roadmap.npz'),
     #                    **graph2ndarrays(state.roadmap))
-
-    gui.activate_layer('visible')
 
     t0 = time.time()
 
@@ -245,6 +244,7 @@ def run(*, octree, mesh, state=None,
     else:
         log.error('exploration did not finish in %d steps', num_steps)
 
+    log.info('elapsed time: %s', format_duration(time.time()-t0))
     log.info('link: %s', f'file://{path.abspath(output_path())}')
 
     if close_on_finish:

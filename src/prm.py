@@ -41,9 +41,9 @@ However, we can insert a "jump" edge v_00-v20, to help the graph search jump to
 more interesting states.  Once v_10-v_11 is visited, we can remove all edges
 connected to v_10.
 
-The terminology is skip and jump: a skip edge is marked skip because it
-sees no unseen faces, and a jump edge is a combination of several skip edges.
-Jump edges are therefore always skip edges.
+The terminology is seen and jump: a seen edge is marked seen because it
+sees no unseen faces, and a jump edge is a combination of several seen edges.
+Jump edges are therefore always seen edges.
 
 """
 
@@ -154,10 +154,10 @@ def _connect(G, new, r_new, *, index, mesh, force=False,
 
         d = np.linalg.norm(r_new - r_neigh)
         G.add_edge(new, neigh, d=d, rs=[r_new, r_neigh], vs=[new, neigh],
-                   skip=False, jump=False)
+                   seen=False, jump=False, visited=False)
 
 
-def insert_random(G, node, *, num_attempts=10):
+def insert(G, node, *, position='random', num_attempts=10):
 
     mesh  = G.graph['_mesh']
     index = G.graph['_index']
@@ -165,17 +165,21 @@ def insert_random(G, node, *, num_attempts=10):
 
     bbox_min, bbox_max = bbox
 
+    if position != 'random':
+        num_attempts = 1
+        bbox_min = bbox_max = np.asarray(position, dtype=np.float)
+
     for i in range(num_attempts):
         r_node = np.random.uniform(bbox_min, bbox_max, size=(3,))
         index.add(r_node, node=node)
-        G.add_node(node, r=r_node, skip=False)
+        G.add_node(node, r=r_node, seen=False)
         _connect(G, node, r_node, mesh=mesh, index=index, force=True)
         if G.degree(node) > 0:
             break
         index.remove_nearest(r_node)
         G.remove_node(node)
     else:
-        raise RuntimeError('could not place node')
+        raise RuntimeError('node placed without neighbors')
 
     sensors.update_edge_visibility(G, mesh, save_cache=False)
 
@@ -199,11 +203,27 @@ def extract_maximal_component(G):
         log.info('roadmap is connected, not extracting')
 
 
+def remove_invisible_faces(G):
+    vis_faces   = G.graph['vis_faces']
+    covis_faces = G.graph['covis_faces']
+    area_faces  = G.graph['area_faces']
+
+    G.graph['removed_faces'] = ~vis_faces
+    G.graph['vis_faces']     = vis_faces[vis_faces]
+    G.graph['covis_faces']   = covis_faces[vis_faces, :][:, vis_faces]
+    G.graph['area_faces']    = area_faces[vis_faces]
+
+    for u, v, dd_uv in G.edges.data():
+        dd_uv['vis_faces'] = dd_uv['vis_faces'][vis_faces]
+
+    log.info('removed %d faces from roadmap', np.count_nonzero(~vis_faces))
+
+
 @parame.configurable
 def new(*, mesh, octree, bbox=None, nodes={},
         bin_size:         cfg.param = 1.5,
         regular_grid:     cfg.param = False,
-        num_nodes_max:    cfg.param = 2000,
+        num_nodes_max:    cfg.param = 5000,
         z_bounds:         cfg.param = None):
 
     log.info(f'building prm (max {num_nodes_max} nodes)')
@@ -261,7 +281,7 @@ def new(*, mesh, octree, bbox=None, nodes={},
 
     for i, coord in enumerate(coords):
         index.add(coord, node=i)
-        G.add_node(i, r=coord, skip=False)
+        G.add_node(i, r=coord, seen=False)
 
     log.debug('average number of nodes in each spatial index bin: %.2f',
               np.mean([len(bin) for bin in index.iter_bins()]))
@@ -285,25 +305,30 @@ def new(*, mesh, octree, bbox=None, nodes={},
 
 @parame.configurable
 def update_jumps(G, *, seen, active=(),
-                 skip_max_faces:  cfg.param = 0,
+                 min_vis_faces:   cfg.param = 0,
                  max_degree_jump: cfg.param = 36):
 
     vis_faces = G.graph['vis_faces']
     vis_unseen = vis_faces & ~seen
 
-    # Mark edges skip if they see no unseen faces
+    # Mark edges seen  if they have no unseen faces
+    # Mark edges blind if they have no visible faces
     for u, v, dd_uv in list(G.edges.data()):
         if dd_uv['jump']:
             G.remove_edge(u, v)
         num_unseen_uv = np.count_nonzero(dd_uv['vis_faces'] & vis_unseen)
-        dd_uv['skip'] = num_unseen_uv <= skip_max_faces
+        num_vis_uv    = np.count_nonzero(dd_uv['vis_faces'] & vis_faces)
+        dd_uv['seen']  = num_unseen_uv <= min_vis_faces
+        dd_uv['blind'] = num_vis_uv    <= min_vis_faces
 
+    # Mark nodes seen if all their edges are seen
+    # Mark nodes jump if some of their non-blind edges are seen but not all.
     for n, dd_n in G.nodes.data():
-        nbrs_skip = [dd_m['skip'] for dd_m in G._adj[n].values()]
-        dd_n['skip'] = all(nbrs_skip)
-        dd_n['jump'] = any(nbrs_skip) and not dd_n['skip']
+        nbrs_seen = [dd_nm['seen'] for m, dd_nm in G._adj[n].items() if not dd_nm['blind']]
+        dd_n['seen'] = all(nbrs_seen)
+        dd_n['jump'] = any(nbrs_seen) and not dd_n['seen']
 
-    # Nodes marked skip should not have any jump edges: all their edges are skip edges.
+    # Nodes marked seen should not have any jump edges: all their edges are seen edges.
     # Nodes marked jump should have a jump edge to every other jump node.
     Jump = NodeDataMap(G, 'jump')
 
@@ -317,13 +342,13 @@ def update_jumps(G, *, seen, active=(),
     G.graph['_shortest_path_memo'] = {}
 
     for u, v in edges:
-        if {u, v} & active or max(G.degree(u), G.degree(v)) < max_degree_jump:
+        if {u, v} & active and max(G.degree(u), G.degree(v)) < max_degree_jump:
             try:
-                _add_jump(G, u, v, skip=True, jump=True)
+                _add_jump(G, u, v, seen=True, jump=True, visited=True)
             except nx.NetworkXNoPath:
                 log.warn(f'jump edge insertion failed, no path {u}-{v} found')
 
-    # Mark nodes skip (and remove skip edges) when their edges are skip
+    # Mark nodes seen (and remove jump edges) when their edges are seen
     n_removed = 0
     for n, dd_n in G._node.items():
 
@@ -333,7 +358,7 @@ def update_jumps(G, *, seen, active=(),
         nbrs = G._adj[n]
         jump_edges = {(n, m) for m, dd_m in nbrs.items() if dd_m['jump']}
 
-        if jump_edges and dd_n['skip']:
+        if jump_edges and dd_n['seen']:
             log.debug('removing %d jump edges from %s', len(jump_edges), n)
             n_removed += len(jump_edges)
             G.remove_edges_from(jump_edges)
@@ -346,7 +371,7 @@ def update_jumps(G, *, seen, active=(),
 
 def _weightfunc(u, v, dd):
     "Edge weight = distance for visited non-jump edges, otherwise None."
-    if dd['skip'] and not dd['jump']:
+    if dd['seen'] and not dd['jump']:
         return dd['d']
 
 

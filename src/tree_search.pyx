@@ -18,37 +18,28 @@ from libcpp.unordered_map cimport unordered_map as hashmap
 from libcpp.limits cimport numeric_limits
 
 import numpy as np
+cimport numpy as cnp
 from networkx.utils import pairwise
 
 import gui
+import parame
+from tree import Tree
 
-
-# Sanity test that is quite expensive.
-DEF test_seen = False
 
 log = logging.getLogger(__name__)
 
+cfg = parame.Module(__name__)
 
-cdef enum:
-    SF_OURS
-    SF_GN
+cdef enum: SF_OURS, SF_GN
+cdef enum: WF_OURS, WF_UNIFORM, WF_UNIFORM_COLORED
+cdef enum: PS_OURS, PS_SHORTEST
+score_functions  = {'ours': SF_OURS, 'gn': SF_GN}
+weight_functions = {'ours': WF_OURS, 'uniform': WF_UNIFORM, 'colored_uniform': WF_UNIFORM_COLORED}
+path_selections  = {'ours': PS_OURS, 'shortest': PS_SHORTEST}
 
-score_functions = {'ours': SF_OURS,
-                   'gn': SF_GN}
 
-cdef enum:
-    WF_OURS
-    WF_UNIFORM
-
-weight_functions = {'ours': WF_OURS,
-                    'uniform': WF_UNIFORM}
-
-cdef enum:
-    PS_OURS
-    PS_BFS
-
-path_selections = {'ours': PS_OURS,
-                   'bfs': PS_BFS}
+class NoPlanFoundError(Exception):
+    pass
 
 
 def statstr(a):
@@ -56,7 +47,7 @@ def statstr(a):
     if len(a) == 0:
         return 'N=0, min=?, mean=?, max=?, std=?'
     elif len(a) == 1:
-        return f'N=1, min={a[0]}, mean={a[0]}, max={a[0]}, std=?'
+        return f'N=1, min={a[0]:.5g}, mean={a[0]:.5g}, max={a[0]:.5g}, std=?'
     else:
         return ', '.join([f'N={len(a)}',
                           f'min={np.min(a):.5g}', f'mean={np.mean(a):.5g}',
@@ -70,8 +61,11 @@ cdef double [::1] compute_covis_area(const unsigned char [:, :] covis,
                                      const double [:] area,
                                      double [::1] covis_area) nogil:
     cdef double area_i
-    assert covis_area.shape[0] == covis.shape[0]
-    assert area.shape[0]       == covis.shape[0]
+    cdef double min_area
+    with gil:
+        min_area = cfg.get('min_area', 0.0)
+        assert covis_area.shape[0] == covis.shape[0]
+        assert area.shape[0]       == covis.shape[0]
 
     for i in range(covis.shape[0]):
         area_i = 0.0
@@ -80,7 +74,9 @@ cdef double [::1] compute_covis_area(const unsigned char [:, :] covis,
                 if vis[j] and covis[i, j]:
                     area_i += area[j]
 
-        covis_area[i] = 12*sqrt(area_i)
+        if 0.0 < area_i < min_area:
+            area_i += 200.0
+        covis_area[i] = sqrt(area_i)
 
     return covis_area
 
@@ -135,40 +131,48 @@ cdef cppclass EdgeExistsPredicate:
         return E.count(h(s, v)) > 0
 
 
-# cts.expand() is called by tree_search.expand(), which sets the defaults for
-# all parameters.
-def expand(object T, *, object roadmap,
-           int    steps,
-           double alpha,
-           double lam,
-           double K,
-           int    weight_function,
-           int    score_function,
-           int    path_selection):
+def unit_map(a, *, zero, one):
+    return zero + a*(one - zero)
 
-    cdef int step, i, j, u, v, w
 
-    cdef object G = roadmap
-    cdef int F = T.nodes[T.root]['seen'].shape[0]
-    cdef int N = len(T)
+def expand(object T, *, object roadmap):
 
-    assert 2*sizeof(int) <= sizeof(long)
-    cdef vector[int] intvec
-    cdef hashmap[long, double] D
-    cdef hashmap[long, unsigned char [::1]] Vis_faces
-    cdef hashmap[int, int_list] G_adj
+    assert 2*sizeof(int) == sizeof(long), 'long is twice the size of int'
 
-    cdef unsigned char [::1] vis
+    cdef:
+        # parame doesn't work in Cython, do config oldskool style.
+        int    steps = cfg.get('steps', 30000)
+        double alpha = cfg.get('alpha', 12e-1)
+        double lam   = cfg.get('lam',   35e-2)
+        double K     = cfg.get('K',     1e3)
 
-    # In BFS-style search, we visit each edge in G twice. Not sure why, but it
+        int weight_function = weight_functions[cfg.get('weight_function', 'ours')]
+        int score_function  = score_functions[cfg.get('score_function', 'ours')]
+        int path_selection  = path_selections[cfg.get('path_selection', 'ours')]
+
+        int step, i, j, u, v, w
+
+        object G = roadmap
+        int F = T.nodes[T.root]['seen'].shape[0]
+        int N = len(T)
+
+        vector[int] intvec
+        hashmap[long, double] D
+        hashmap[long, unsigned char [::1]] Vis_faces
+        hashmap[int, int_list] G_adj
+
+        unsigned char [::1] vis
+
+    # In shortest-path-style search, we visit each edge in G twice. Not sure why, but it
     # turns out that way.
-    if path_selection == PS_BFS:
+    if path_selection == PS_SHORTEST:
         steps = 2*len(roadmap.edges) + 1
 
     D.reserve(len(G.edges))
     Vis_faces.reserve(len(G.edges))
     G_adj.reserve(len(G))
 
+    # Copy G._adj to G_adj
     for i, adj in G._adj.items():
         G_adj[i] = adj
         for j, dd_ij in adj.items():
@@ -178,22 +182,24 @@ def expand(object T, *, object roadmap,
             Vis_faces[h(i, j)] = Vis_faces[h(j, i)] = vis
             assert (i, j) in G.edges
 
-    cdef vector[int] path_T
-    cdef vector[int] path_G
-    cdef int root = 0
+    cdef:
+        vector[int] path_T
+        vector[int] path_G
+        int root = 0
+
+        unsigned char [:, ::1] Seen = np.empty((N + steps, F), dtype=np.bool)
+
+        vector[NodeT] Node
+        hashmap[int, int_list] T_succ
 
     assert T.root == root
-
-    cdef unsigned char [:, ::1] Seen = np.empty((N + steps, F), dtype=np.bool)
-
-    cdef vector[NodeT] Node
-    cdef hashmap[int, int_list] T_succ
 
     Node.resize(N)
     Node.reserve(N + steps)
 
     T_succ.reserve(N + steps)
 
+    # Copy T to Node and T_succ.
     for i in range(N):
         T_succ[i] = T.succ[i]
         neighbors_i = set(G.adj[T.nodes[i]['s']])
@@ -214,11 +220,10 @@ def expand(object T, *, object roadmap,
 
     vis_unseen = face_vis & ~np.asarray(Seen[root])
 
-    # Compute face covisibility area, excluding seen faces. We do this at a
-    # smaller length scale because of integer mathematics.
+    # Compute face covisibility area, excluding seen faces.
     covis_area = np.empty(F, dtype=np.float)
     log.debug('computing covis area')
-    if weight_function == WF_OURS:
+    if weight_function == WF_OURS or weight_function == WF_UNIFORM_COLORED:
         compute_covis_area(face_covis,
                            vis_unseen,
                            face_area,
@@ -229,17 +234,20 @@ def expand(object T, *, object roadmap,
         raise ValueError(f'weight_function={weight_function} invalid')
 
     log.debug('computing face score')
-    # Clip to 300 as a 64-bit float has a minimum exponent of 2^-1023 ~ 1e-308.
-    face_score = K*np.exp(-alpha*(covis_area.clip(0, 200)))
+    # 64-bit floats have a minimum exponent of 2^-1023 ~ 1e-308.
+    face_score = K*np.exp(-alpha*covis_area)
     #face_score[~vis_unseen]             = K
 
-    log.debug('updating face colors')
-    gui.update_face_hsva(h=0.8*(1 - (-np.log(face_score/K)/alpha)/200),
-                         s=1.0*vis_unseen,
-                         v=0.6 + 0.4*vis_unseen,
-                         layer='score')
-    #gui.update_face_hsva(sats=0.8*(1 - (-np.log(face_score/K)/alpha)/200), layer='score')
-    #gui.update_face_hsva(hues=0.8/covis_area.max()*covis_area)
+    if weight_function != WF_UNIFORM:
+        log.debug('updating face colors')
+        gui.update_face_hsva(h=unit_map((-np.log(face_score/K)/18).clip(0, 1), zero=0.8, one=0.0),
+                             s=1.0*vis_unseen,
+                             v=unit_map(vis_unseen, zero=0.6, one=1.0),
+                             layer='score')
+
+    if weight_function == WF_UNIFORM_COLORED:
+        covis_area[:] = 0.0
+        face_score[:] = K
 
     log.info('  face_area: %s', statstr(face_area[vis_unseen]))
     log.info(' covis_area: %s', statstr(covis_area[vis_unseen]))
@@ -248,24 +256,26 @@ def expand(object T, *, object roadmap,
 
     log.info('expanding tree %d steps')
 
-    cdef NodeT *node_u
-    cdef NodeT *node_v
-    cdef NodeT *node_w
-    cdef NodeT *node_root = &Node[root]
+    cdef:
+        NodeT *node_u
+        NodeT *node_v
+        NodeT *node_w
+        NodeT *node_root = &Node[root]
+
+        int          best_node   = root
+        vector[int]  best_path_T = [root]
+        vector[int]  best_path_G = [node_root.s]
+        double       best_score  = node_root.score
+
+        double       gain_v
+        double [::1] face_score_vw = face_score
+
+        # For PS_SHORTEST, set of visited _EDGES_.
+        unordered_set[int] visited = {node_root.s}
+        NodeT node = NodeT(parent=0, s=0, depth=0, score=0.0, dist=0.0, unvisited=int_list())
+        int search_start = 0
 
     assert node_root.dist == 0.0
-
-    cdef int          best_node   = root
-    cdef vector[int]  best_path_T = [root]
-    cdef vector[int]  best_path_G = [node_root.s]
-    cdef double       best_score  = node_root.score
-    cdef double       gain_v
-    cdef double [::1] face_score_vw = face_score
-
-    # For PS_BFS, set of visited _EDGES_.
-    cdef unordered_set[int] visited = {node_root.s}
-    cdef NodeT node = NodeT(parent=0, s=0, depth=0, score=0.0, dist=0.0, unvisited=int_list())
-    cdef int search_start = 0
 
     with nogil:
 
@@ -305,7 +315,7 @@ def expand(object T, *, object roadmap,
         if path_selection == PS_OURS:
             node_v.unvisited = G_adj[node_v.s]
 
-        elif path_selection == PS_BFS:
+        elif path_selection == PS_SHORTEST:
             if not visited.count(node_v.s):
                 node_v.unvisited = G_adj[node_v.s]
                 visited.insert(node_v.s)
@@ -328,19 +338,19 @@ def expand(object T, *, object roadmap,
         # faces were found), we return the root node.
         if best_score < node_v.score:
             # Reconstruct path to this node.
-            path_T.resize(node_v.depth, -1)
-            path_G.resize(node_v.depth, -1)
+            path_T.resize(node_v.depth + 1, -1)
+            path_G.resize(node_v.depth + 1, -1)
             x = v
-            while x != root:
-                x = Node[x].parent
+            while True:
                 path_T[Node[x].depth] = x
                 path_G[Node[x].depth] = Node[x].s
-            best_score = node_v.score
+                if x == root:
+                    break
+                x = Node[x].parent
+            best_score  = node_v.score
             best_path_T = path_T
-            best_path_T.push_back(v)
             best_path_G = path_G
-            best_path_G.push_back(node_v.s)
-            best_node = v
+            best_node   = v
 
         if step == 0 or ((step+1) % (steps//6)) == 0:
           with gil:
@@ -348,17 +358,17 @@ def expand(object T, *, object roadmap,
             log.debug(f'{Node.size():5d} nodes, score: {best_score:.5g}')
             gui.hilight_roadmap_edges(G, pairwise(best_path_G))
 
-    if path_selection == PS_BFS:
+    if path_selection == PS_SHORTEST:
         missed = set(G.nodes) - set(visited)
         if missed:
-            log.error('bfs did not visit all nodes. missed: %s', missed)
+            log.error('shortest-path search did not visit all nodes. missed: %s', missed)
             log.error('set(G.nodes)=%s, set(visited)=%s', set(G.nodes), set(visited))
 
         visited_edges  = [(Node[u].s, Node[v].s) for u, succ_u in T_succ for v in succ_u]
         visited_edges += [(Node[v].s, Node[u].s) for u, succ_u in T_succ for v in succ_u]
         missed = set(G.edges) - set(visited_edges)
         if missed:
-            log.error('bfs did not visit all edges. missed: %s', missed)
+            log.error('shortest-path did not visit all edges. missed: %s', missed)
 
     T.graph['best_score']     = best_score
     T.graph['best_path_T']    = list(best_path_T)
@@ -391,3 +401,46 @@ def expand(object T, *, object roadmap,
             log.info('num visited + unvisited states at depth=%d:%7d + %d', depth, num_vis, num_unv)
 
     return T
+
+
+def new(*, start, seen):
+    "Create a new search tree from given *start* and *seen* faces."
+    r = 0
+    T = Tree()
+    T.root = r
+    T.add_node(r)
+    T.nodes[r].update({'s':          start,
+                       'seen':       seen.copy(),
+                       'score':      0.0,
+                       'dist':       0.0,
+                       'depth':      0,
+                       'n_child':    0})
+
+    T.graph['best_node']  = r
+    T.graph['best_score'] = -np.inf
+
+    return T
+
+
+def stump(T, r):
+    "Create a new search tree from T with only node r"
+    T_     = Tree()
+    T_._node[r] = d = T._node[r].copy()
+    T_.graph        = T.graph.copy()
+    del T
+    T_.root = r
+    T_.graph['best_node']  = r
+    T_.graph['best_score'] = d['score']
+    T_._succ[r] = {}
+    T_._pred[r] = {}
+    del d['unvisited']
+    d['n_child'] = 0
+    return T_
+
+
+def plan_path(*, start, seen, roadmap):
+    stree = new(start=start, seen=seen)
+    stree = expand(stree, roadmap=roadmap)
+    if stree.graph['best_node'] == stree.root:
+        raise NoPlanFoundError()
+    return stree.graph['best_path_G'], stree.graph['best_path_seen']

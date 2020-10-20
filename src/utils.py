@@ -1,5 +1,6 @@
 import threading
 import logging
+import hashlib
 
 import numpy as np
 import networkx as nx
@@ -32,7 +33,6 @@ def threadable(f):
 
 
 def graph_md5(G):
-    import hashlib
     hasher = hashlib.md5()
     keysets = {'graph': {'graph': G.graph},
                'node': {u: dd for u, dd in G.nodes.data()},
@@ -44,6 +44,13 @@ def graph_md5(G):
                     data = f'{prefix}[{k!r}][{kd!r}] = {vd!r}\n'
                     hasher.update(data.encode('utf-8'))
     return hasher.hexdigest()
+
+
+def dict_md5(d):
+    h = hashlib.md5()
+    for kd, vd in d.items():
+        h.update(f'{kd!r} = {vd!r}\n'.encode('utf-8'))
+    return h.hexdigest()
 
 
 def graph2ndarrays(G):

@@ -22,6 +22,9 @@ class Param():
     def __init__(self, cfg):
         self.cfg = cfg
 
+    def __str__(self):
+        return f'<param of {self.cfg.name!r}>'
+
 
 def format_envvar(modname, parname):
     return f"{modname.upper().replace('.', '_')}_{parname.upper()}"

@@ -7,26 +7,39 @@ rundir="EXPLORATION_RUNS_DIR=./var/runs_"
 
 jobs=(
     # Compare PV in all five conditions
-    "$flags ${rundir}ours       PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",ours]          $python $script"
-    "$flags ${rundir}gn         PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",gn]            $python $script"
-    "$flags ${rundir}bfs        PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",bfs]           $python $script"
-    "$flags ${rundir}tree       PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",tree]          $python $script"
-    "$flags ${rundir}uni        PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",uniform]       $python $script"
-    "$flags ${rundir}nj         PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",nojump]        $python $script"
-
-    # Not terribly interest in these GN experiments.
-    #"$flags ${rundir}gn_bfs     PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",gn,bfs]        $python $script"
-    #"$flags ${rundir}gn_uni     PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",gn,uniform]    $python $script"
-    #"$flags ${rundir}gn_nj      PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",gn,nojump]     $python $script"
+    #"$flags ${rundir}ours       PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",ours]          $python $script"
+    #"$flags ${rundir}gn         PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",gn]            $python $script"
+    #"$flags ${rundir}bfs        PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",bfs]           $python $script"
+    #"$flags ${rundir}tree       PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",tree]          $python $script"
+    #"$flags ${rundir}uni        PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",uniform]       $python $script"
+    #"$flags ${rundir}nj         PARAME_PROFILE=[shortrange,pv"{0000,0050,0100,0200,0300,0500,0800,1200,1600,inf}",nojump]        $python $script"
 
     # Compare tree-like pathing (without PV.)
-    "$flags ${rundir}tree_uni       PARAME_PROFILE=[shortrange,pv0000,tree,uniform]      $python $script"
-    "$flags ${rundir}tree_gn        PARAME_PROFILE=[shortrange,pv0000,tree,gn]           $python $script"
-    "$flags ${rundir}tree_uni_gn    PARAME_PROFILE=[shortrange,pv0000,tree,uniform,gn]   $python $script"
+    #"$flags ${rundir}tree_uni       PARAME_PROFILE=[shortrange,pv0000,tree,uniform]      $python $script"
+    #"$flags ${rundir}tree_gn        PARAME_PROFILE=[shortrange,pv0000,tree,gn]           $python $script"
+    #"$flags ${rundir}tree_uni_gn    PARAME_PROFILE=[shortrange,pv0000,tree,uniform,gn]   $python $script"
 
-    #"$flags ${rundir}uni_nj     PARAME_PROFILE=[shortrange,pvinf,uniform,nojump] $python $script"
-    #"$flags ${rundir}gn_bfs_nj  PARAME_PROFILE=[shortrange,pv"{000,050,100,200,300,500,inf}",gn,bfs,nojump]  $python $script"
-    #"$flags ${rundir}gn_uni_nj  PARAME_PROFILE=[shortrange,pvinf,gn,uniform,nojump] $python $script"
+    #"$flags ${rundir}t005  PARAME_PROFILE=[shortrange,pvinf,ours] TREE_SEARCH_MIN_AREA=0.05  $python $script"
+    #"$flags ${rundir}t010  PARAME_PROFILE=[shortrange,pvinf,ours] TREE_SEARCH_MIN_AREA=0.10 $python $script"
+    #"$flags ${rundir}t025  PARAME_PROFILE=[shortrange,pvinf,ours] TREE_SEARCH_MIN_AREA=0.25 $python $script"
+    #"$flags ${rundir}t05   PARAME_PROFILE=[shortrange,pvinf,ours] TREE_SEARCH_MIN_AREA=0.50 $python $script"
+    #"$flags ${rundir}t1    PARAME_PROFILE=[shortrange,pvinf,ours] TREE_SEARCH_MIN_AREA=1.00 $python $script"
+    #"$flags ${rundir}t2    PARAME_PROFILE=[shortrange,pvinf,ours] TREE_SEARCH_MIN_AREA=2.00 $python $script"
+    #"$flags ${rundir}t4    PARAME_PROFILE=[shortrange,pvinf,ours] TREE_SEARCH_MIN_AREA=4.00 $python $script"
+    #"$flags ${rundir}t6    PARAME_PROFILE=[shortrange,pvinf,ours] TREE_SEARCH_MIN_AREA=6.00 $python $script"
+
+    #"$flags ${rundir}maze_ours         PARAME_PROFILE=[shortrange,pvinf,maze,ours]         $python $script"
+    #"$flags ${rundir}maze_uni          PARAME_PROFILE=[shortrange,pvinf,maze,uniform]      $python $script"
+    #"$flags ${rundir}maze_tree         PARAME_PROFILE=[shortrange,pvinf,maze,tree]         $python $script"
+    #"$flags ${rundir}maze_tree_uni     PARAME_PROFILE=[shortrange,pvinf,maze,tree,uniform] $python $script"
+    #"$flags ${rundir}maze_tree_uni_gn  PARAME_PROFILE=[shortrange,pvinf,maze,tree,uniform,gn] $python $script"
+    
+    #"$flags ${rundir}maze_bt_di_ct00    PARAME_PROFILE=[shortrange,pvinf,maze,ours,ct00,pvinf]  $python $script"
+    "$flags ${rundir}maze_bt_d5_ct00    PARAME_PROFILE=[shortrange,pvinf,maze,ours,ct0000,pv0500]   $python $script"
+    "$flags ${rundir}maze_bt_d2_ct00    PARAME_PROFILE=[shortrange,pvinf,maze,ours,ct0000,pv0200]   $python $script"
+    "$flags ${rundir}maze_bt_di_ct25    PARAME_PROFILE=[shortrange,pvinf,maze,ours,ct0025,pvinf]    $python $script"
+    "$flags ${rundir}maze_bt_d5_ct25    PARAME_PROFILE=[shortrange,pvinf,maze,ours,ct0025,pv0500]   $python $script"
+    "$flags ${rundir}maze_bt_d2_ct25    PARAME_PROFILE=[shortrange,pvinf,maze,ours,ct0025,pv0200]   $python $script"
 
 )
 

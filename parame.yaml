@@ -36,13 +36,32 @@ gui:
 parame:
 
     # Profiles are an easy way to switch between option sets.
-    profile: shortrange
+    profile: [shortrange, pvinf, ours]
+
+    stationary:
+        gui:
+            follow: false
+            fov: [65, 45]
 
     shorter:
         prm:
             max_dist: 1.0
         sensors:
             radius: 3.0
+            step_size: 0.25
+
+    microrange:
+        prm:
+            max_dist: 0.75
+        sensors:
+            radius: 1.5
+            step_size: 0.25
+
+    tinyrange:
+        prm:
+            max_dist: 1.0
+        sensors:
+            radius: 2.0
             step_size: 0.25
 
     shortrange:
@@ -54,10 +73,10 @@ parame:
 
     longrange:
         prm:
-            max_dist: 2.5
+            max_dist: 1.5
         sensors:
-            radius: 5.0
-            step_size: 0.5
+            radius: 6.0
+            step_size: 0.25
 
     jesus:
         sensors:
@@ -78,12 +97,29 @@ parame:
     pv1600: {prevision: {max_distance:  16.00}}
     pvinf:  {prevision: {max_distance: 100.00}}
 
+    ct0000: {tree_search: {min_area: 0.00}}
+    ct0025: {tree_search: {min_area: 0.25}}
+
     ours:       {}
     gn:         {tree_search: {score_function: gn}}
-    bfs:        {tree_search: {path_selection: bfs}}
+    bfs:        {tree_search: {path_selection: shortest}}
     uniform:    {tree_search: {weight_function: uniform}}
+    coloform:   {tree_search: {weight_function: colored_uniform}}
     nojump:     {prm: {max_degree_jump: 0}}
-    tree:       {tree_search: {path_selection: bfs}, exploration: {jump_edges: false}}
+    tree:       {tree_search: {path_selection: shortest}, exploration: {jump_edges: false}}
+
+    maze:
+        world:
+            resolution: 0.45
+            filename: ./resources/maze.ot
+        prm:
+            z_bounds: [1.0, 2.5]
+
+    demo:
+        gui:
+            follow: false
+        exploration:
+            start_position: [0.0, 0.0, 1.0]
 
     # This configuration loads pretty fast
     test:

@@ -15,7 +15,13 @@ def load(*,
          filename: cfg.param = 'resources/map.ot',
          resolution: cfg.param = 0.4):
     log.info(f'loading {filename}...')
-    octree = octomap.OcTree.read(bytes(filename, 'utf-8'))
+    if filename.endswith('.ot'):
+        octree = octomap.OcTree.read(bytes(filename, 'utf-8'))
+    elif filename.endswith('.bt'):
+        octree = octomap.OcTree(b"")
+        octree.readBinary(bytes(filename, 'utf-8'))
+    else:
+        raise ValueError('do not know how to load this extension')
 
     log.debug('extracting pointcloud...')
     pts, _ = octree.extractPointCloud()
