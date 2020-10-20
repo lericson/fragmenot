@@ -6,18 +6,26 @@ for GIT_WORK_TREE in ./env/src/*; do
   GIT_DIR=$GIT_WORK_TREE/.git
   DEPNAME=$(basename $GIT_WORK_TREE)
   DEPREF=refs/heads/deps/$DEPNAME
+  printf "Checking repository $GIT_WORK_TREE... "
   if ! git rev-parse $DEPREF >/dev/null 2>&1; then
+    printf "Not a depref"
     continue
   fi
   if ! GIT_WORK_TREE=$GIT_WORK_TREE GIT_DIR=$GIT_DIR git diff --quiet; then
-    echo $GIT_WORK_TREE has uncommitted changes
-  fi;
+    printf "Uncommitted changes!\n"
+    continue
+  else
+    printf "No uncommited changes... "
+  fi
   if [[ $(git rev-parse $DEPREF) != $(git --git-dir=$GIT_DIR rev-parse HEAD) ]]; then
-    echo $GIT_WORK_TREE HEAD is not equal to $DEPREF
-    echo Press Enter to set $DEPREF to the HEAD of $GIT_WORK_TREE
+    printf "HEAD is not equal to $DEPREF!\n"
+    printf "I can fix this for you.\n"
+    printf "Press Enter to set $DEPREF to the HEAD of $GIT_WORK_TREE\n"
     read -r || exit
     git fetch -n $GIT_DIR +HEAD:$DEPREF
-  fi;
+  else
+    printf "Seems OK.\n"
+  fi
 done
 
 REQUIREMENTS=requirements.txt
@@ -29,18 +37,18 @@ while read -ra LINE; do
   DEPREF=refs/heads/deps/$DEPNAME
   GIT_WORK_TREE=./env/src/$DEPNAME
   GIT_DIR=$GIT_WORK_TREE/.git
+  printf "Checking requirement for $DEPREF... "
   if [ ! -e $GIT_WORK_TREE ]; then
-    echo $GIT_WORK_TREE does not exist, you need to re-run pip install -r requirements.txt
-  fi
-  if ! git rev-parse $DEPREF >/dev/null 2>&1; then
-    echo $DEPREF does not exist, you need to fetch deps references
-    continue
-  fi
-  if [[ $(git rev-parse $DEPREF) != $(git --git-dir=$GIT_DIR rev-parse $COMMIT) ]]; then
-    echo $REQUIREMENTS:$LNO: Commit $COMMIT is not equal to $DEPREF '('$(git rev-parse $DEPREF)')'
+    printf "\n%s does not exist, you need to re-run pip install -r requirements.txt" "$GIT_WORK_TREE"
+  elif ! git rev-parse $DEPREF >/dev/null 2>&1; then
+    printf "\n%s does not exist, you need to fetch deps references\n" "$DEPREF"
+  elif [[ $(git rev-parse $DEPREF) != $(git --git-dir=$GIT_DIR rev-parse $COMMIT) ]]; then
+    printf "\n%s: Commit %s is not equal to %s (%s)\n" "$REQUIREMENTS:$LNO" "$COMMIT" "$DEPREF" "$(git rev-parse $DEPREF)"
+  else
+    printf "Seems OK.\n"
   fi
 done
 
 if ! git diff --quiet; then
-  echo Main repository has uncommited changes
+  printf "Main repository has uncommited changes!\n"
 fi
