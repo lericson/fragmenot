@@ -27,10 +27,10 @@ rc('lines', linewidth=1.0)
 rc('font', family='serif', size=10.0)
 #rc('pdf', fonttype=42)
 rc('text', usetex=True)
-rc('figure', figsize=1.2*np.r_[84.0, 32.0]/25)
+rc('figure', figsize=1.205*np.r_[79.0, 32.0]/25)
 
 #colors = 'C0 C1 C2 C3 C4 C5 C6 C7 C8 C9 C10 C11 C12 C13 C14 C15 C16'.split()
-colors = 'C0 C3 C2 C4 C5 C6 C7 C8 C9 C1 C10 C11 C12 C13 C14 C15 C16'.split()
+colors = cfg.get('colors', 'C0 C3 C2 C4 C5 C6 C7 C8 C9 C1 C10 C11 C12 C13 C14 C15 C16'.split())
 
 
 @dataclass
@@ -194,9 +194,10 @@ def label(k, Group, **kwargs):
     if isinstance(k, str):
         return k
     d = Group[k][0].d
-    dstr = f'{d:.2f}' if d < 50.0 else '$\infty$'
+    dstr = f'{d:.0f}' if d < 50.0 else '$\infty$'
+    #dstr = f'{d:.1f}' if d < 10.0 else dstr
     #return r'$d$ =\hphantom{99.99}\llap{' + dstr + r'}, $N$ = ' + str(len(Group[k]))
-    return r'$d$ =\hphantom{99.99}\llap{' + dstr + r'}'
+    return r'$d$ = {' + dstr + r'}'
 
 
 def plot_lerp(X, Y, points, *, k=1, interval=0.05, label=None, color=None):
@@ -212,10 +213,13 @@ def plot_lerp(X, Y, points, *, k=1, interval=0.05, label=None, color=None):
 @parame.configurable
 def main(*, args=sys.argv[1:],
          style:       cfg.param = 'line',
-         ncol:        cfg.param = 5,
+         ncol:        cfg.param = 2,
+         orientation: cfg.param = 'portrait',
          save_legend: cfg.param = None,
-         save_ipr:    cfg.param = None,
-         save_compl:  cfg.param = None,
+         save_ipr:    cfg.param = 'interactive',
+         save_compl:  cfg.param = 'interactive',
+         sort_groups: cfg.param = True,
+         ipr_animate: cfg.param = False,
          skip_failed: cfg.param = True):
 
     Group = {}
@@ -234,7 +238,8 @@ def main(*, args=sys.argv[1:],
     arg_sets = [[]]
     for arg in args:
         if arg == '--':
-            arg_sets.append([])
+            if arg_sets[-1]:
+                arg_sets.append([])
         else:
             arg_sets[-1].append(arg)
 
@@ -252,6 +257,7 @@ def main(*, args=sys.argv[1:],
             ns.filter = lambda desc: profiles < set(desc.profile)
         else:
             ns.filter = lambda desc: True
+        print('Next group:', ns.group)
         for inputno, pathname in enumerate(ns.pathnames, inputno+1):
             print(f'loading {inputno:3d} / {ninputs}: {pathname} ', end='')
             try:
@@ -274,17 +280,37 @@ def main(*, args=sys.argv[1:],
 
     assert Group
 
-    Group = {k: Group[k] for k in sorted(Group)}
+    if sort_groups:
+        Group = {k: Group[k] for k in sorted(Group)}
 
     print(f'Group keys, sorted:')
     print('\n'.join(str(k) for k in Group))
 
     from scipy.interpolate import interp1d
 
+    if ipr_animate:
+        for i, k in enumerate(Group):
+            for desc in Group[k]:
+                for t in range(len(desc.isoperimetric_ratio)):
+                    plt.clf()
+                    ax = plt.gca()
+                    ax.set_yscale('log', basey=10)
+                    ax.set_xlim([ 0.0, cfg.get('xmax', 1000)])
+                    ax.set_ylim([20.0, cfg.get('ymax', 6000)])
+                    ax.plot(desc.distance[:t+1], desc.isoperimetric_ratio[:t+1], color=colors[i])
+                    ax.plot(ax.get_xlim(), [desc.isoperimetric_ratio[t]]*2, linestyle='dashed', color=colors[i])
+                    loc = ax.yaxis.get_major_locator()
+                    #loc.set_params(min_n_ticks=4)
+                    plt.grid(True)
+                    plt.ylabel('IPR')
+                    plt.subplots_adjust(top=0.946, bottom=0.282, left=0.187, right=0.963)
+                    plt.savefig(path.join(desc.pathname, f'ipr{t:05d}.png'))
+                    print(t)
+
     #bins = 10
     #_, bin_edges = np.histogram([h for holes_i in desc.holes for h in holes_i], bins=bins)
 
-    if 0 or save_legend:
+    if save_legend:
         ps = [patches.Patch(color=colors[i], label=label(Group=Group, i=i, k=k))
               for i, k in enumerate(Group)]
         ps = np.array(ps)
@@ -293,13 +319,12 @@ def main(*, args=sys.argv[1:],
         # Inverse of how the grid is laid out, i.e., how it is input to MPL.
         invert = grid.transpose().reshape(-1)
         # Apply the inverse mapping to our legend patches
-        ps = ps[invert[invert < len(ps)]]
+        #ps = ps[invert[invert < len(ps)]]
         fig = plt.figure()
         fig.legend(ps, [p.get_label() for p in ps], loc='center', frameon=True, ncol=ncol)
-        if save_legend:
+        if save_legend != 'interactive':
             fig.savefig(save_legend)
-        else:
-            plt.show()
+        if 0:
             print('Please save legend.')
             print('Press Enter to continue, ^C to Exit')
             try:
@@ -310,37 +335,7 @@ def main(*, args=sys.argv[1:],
 
     print('LERP me like one of your French girls')
 
-    if 1 or save_ipr:
-        fig = plt.figure()
-
-        for i, k in enumerate(Group):
-            Xs_in         = [ds.distance for ds in Group[k]]
-            x_max         = sorted(X_in[-1] for X_in in Xs_in)[-1]
-            h             = x_max/1000
-            X_lerp        = h*np.arange(0, 1001)
-            Ys_in         = [ds.isoperimetric_ratio for ds in Group[k]]
-            mu_Y, sigma_Y = lerp_stats(Xs_in, Ys_in, X_lerp)
-            plot_lerp(Xs_in, Ys_in, X_lerp, color=colors[i], label=label(**locals()))
-
-        ax = fig.gca()
-        ax.set_yscale('log', basey=10)
-        ax.set_xlim([ 0.0, cfg.get('xmax', 1000)])
-        ax.set_ylim([20.0, cfg.get('ymax', 6000)])
-        loc = ax.yaxis.get_major_locator()
-        #loc.set_params(min_n_ticks=4)
-        plt.xlabel('Distance Traveled [m]')
-        plt.ylabel('IPR')
-        plt.grid(True)
-        #plt.title('IPR of unseen space (95\\% CI)')
-        #plt.legend(ncol=2)
-        #plt.tight_layout()
-        plt.subplots_adjust(top=0.961, bottom=0.282, left=0.142, right=0.963)
-        if save_ipr:
-            fig.savefig(save_ipr)
-        else:
-            plt.show()
-
-    if 1 or save_compl:
+    if save_compl:
         fig = plt.figure()
 
         for i, k in enumerate(Group):
@@ -349,14 +344,19 @@ def main(*, args=sys.argv[1:],
             h             = x_max/1000
             X_lerp        = h*np.arange(0, 1001)
             Ys_in         = [100*(1.0 - ds.complete) for ds in Group[k]]
-            mu_Y, sigma_Y = lerp_stats(Xs_in, Ys_in, X_lerp)
             plot_lerp(Xs_in, Ys_in, X_lerp, color=colors[i], label=label(**locals()))
+            from scipy import stats
+            a = [ds.distance[-1]                for ds in Group[k]]
+            b = [ds.distance[-1] for j in Group for ds in Group[j] if j != k]
+            test_res = stats.ttest_ind(a, b, equal_var=False)
+            print(f'p: {test_res.pvalue:.5g}, mean[a] = {np.mean(a):.5g} m')
+            #mu_Y, sigma_Y = lerp_stats(Xs_in, Ys_in, X_lerp)
             #plt.plot([0, 100], [mu_Y[-1], mu_Y[-1]], '--', color=colors[i], alpha=0.6)
 
         ax = fig.gca()
         ax.set_yscale('log', basey=10)
         ax.set_xlim([0.0, cfg.get('xmax', 1000)])
-        ax.set_ylim([10**-pct_unexplored_log10, 10**2])
+        ax.set_ylim([10**-pct_unexplored_log10 + 1e-8, 10**2])
         ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f'{x:.3g}\\%'))
         #ax.set_ylim([100.0, 0])
         loc = ax.yaxis.get_major_locator()
@@ -366,18 +366,68 @@ def main(*, args=sys.argv[1:],
         loc.subs(np.arange(2.0, 10.0, 2))
         #ax.yaxis.set_major_locator(ticker.LogLocator(numticks=4))
 
-        plt.xlabel('Distance Traveled [m]')
-        plt.ylabel('Unexplored Area')
         plt.grid(True, which='major')
+        plt.ylabel('Unexplored Area')
+        if orientation == 'landscape':
+            plt.xlabel('Distance Traveled [m]')
+            plt.subplots_adjust(top=0.946, bottom=0.282, left=0.187, right=0.963)
+        elif orientation == 'portrait':
+            ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f''))
+            w, h = fig.get_size_inches()
+            fig.set_size_inches(w, h - h*(0.282 - 0.057))
+            plt.subplots_adjust(top=0.946, bottom=0.057, left=0.122, right=1 - 0.122) #0.948)
+        #lx, ly = ax.yaxis.label.get_position()
+        #ax.yaxis.set_label_position('right')
+        ax.yaxis.set_label_coords(1.015, 0.5)
+        ax.yaxis.label.set_rotation(-90.0)
         #plt.title(r'Completion plot with $\pm 1\sigma$ bound')
         #plt.legend(ncol=4)
         #plt.tight_layout()
-        plt.subplots_adjust(top=0.961, bottom=0.282, left=0.177, right=0.963)
-        if save_compl:
+        if save_compl != 'interactive':
             fig.savefig(save_compl)
-        else:
-            plt.show()
 
+    if save_ipr:
+        fig = plt.figure()
+
+        for i, k in enumerate(Group):
+            Xs_in         = [ds.distance for ds in Group[k]]
+            x_max         = sorted(X_in[-1] for X_in in Xs_in)[-1]
+            h             = x_max/1000
+            X_lerp        = h*np.arange(0, 1001)
+            Ys_in         = [ds.isoperimetric_ratio for ds in Group[k]]
+            plot_lerp(Xs_in, Ys_in, X_lerp, color=colors[i], label=label(**locals()))
+            #mu_Y, sigma_Y = lerp_stats(Xs_in, Ys_in, X_lerp)
+
+        ax = fig.gca()
+        ax.set_yscale('log', basey=10)
+        ax.set_xlim([ 0.0, cfg.get('xmax', 1000)])
+        ax.set_ylim([20.0, cfg.get('ymax', 6000)])
+        #loc = ax.yaxis.get_major_locator()
+        #loc.set_params(min_n_ticks=4)
+        plt.grid(True)
+        plt.ylabel('IPR')
+        plt.xlabel('Distance Traveled [m]')
+        if orientation == 'landscape':
+            plt.subplots_adjust(top=0.946, bottom=0.282, left=0.142, right=0.963)
+        elif orientation == 'portrait':
+            w, h = fig.get_size_inches()
+            fig.set_size_inches(w, h - h*(0.996 - 0.946))
+            plt.subplots_adjust(top=0.996, bottom=0.282, left=0.122, right=1 - 0.122) #0.948)
+        #plt.title('IPR of unseen space (95\\% CI)')
+        #plt.legend(ncol=2)
+        #plt.tight_layout()
+        #ax.yaxis.set_label_position('right')
+        #ax.yaxis.set_label_coords(-0.18, 0.5)
+        ax.yaxis.set_label_coords(1.013, 0.5)
+        ax.yaxis.label.set_rotation(-90.0)
+        #ax.yaxis.label.set_rotation(-90.0)
+        #ax.yaxis.set_label_position((lx, ly))
+        #ax.yaxis.label_position = (lx, ly)
+        if save_ipr != 'interactive':
+            fig.savefig(save_ipr)
+
+    if 'interactive' in {save_legend, save_compl, save_ipr}:
+        plt.show()
 
     if False: # show histogram
         fin_dists = sorted([ds.distance[-1] for k in Group for ds in Group[k]])

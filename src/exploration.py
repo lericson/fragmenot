@@ -34,11 +34,13 @@ class State():
     @classmethod
     @parame.configurable
     def new(cls, *, mesh, octree, start=-1,
+            remove_faces:   cfg.param = True,
             start_position: cfg.param = 'random'):
         rd = prm.new(mesh=mesh, octree=octree)
-        prm.remove_invisible_faces(rd)
-        mesh.update_faces(~rd.graph['removed_faces'])
-        gui.remove_faces(rd.graph['removed_faces'])
+        if remove_faces:
+            prm.remove_invisible_faces(rd)
+            mesh.update_faces(~rd.graph['removed_faces'])
+            gui.remove_faces(rd.graph['removed_faces'])
         prm.insert(rd, start, position=start_position)
 
         seen = np.all([vis_uv for _, _, vis_uv in rd.edges(start, data='vis_faces')], axis=0)

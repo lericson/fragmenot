@@ -15,7 +15,7 @@ while getopts "r:s:o:h" opt; do
     r) fps="$OPTARG";;
     s) scale="$OPTARG";;
     o) fn="$OPTARG";;
-    h|?) echo "usage: $0 [-r fps] [-s scale] [-o out.gif]" >&2; exit 1
+    h|?) echo "usage: $0 [-r fps=$fps] [-s scale=$scale] [-o $fn]" >&2; exit 1
   esac
 done
 

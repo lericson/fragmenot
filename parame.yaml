@@ -99,6 +99,8 @@ parame:
 
     ct0000: {tree_search: {min_area: 0.00}}
     ct0025: {tree_search: {min_area: 0.25}}
+    ct0200: {tree_search: {min_area: 2.00}}
+    ct0600: {tree_search: {min_area: 6.00}}
 
     ours:       {}
     gn:         {tree_search: {score_function: gn}}

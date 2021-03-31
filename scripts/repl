@@ -19,6 +19,7 @@ log_format = ('[%(asctime)s] %(filename)s:%(lineno)d '
 
 class default_namespace:
     import numpy as np
+    import networkx as nx
     import prm, exploration, tree_search, world, parame
 
 
@@ -41,13 +42,14 @@ def main():
     octree, mesh = world.load()
 
     if gui.cfg.get('headless', not gui.has_pyglet):
-        repl.run(octree=octree, mesh=mesh)
+        repl(octree=octree, mesh=mesh)
 
     else:
         gui.init(mesh, title=exploration.output_path())
-        t = repl.thread(octree=octree, mesh=mesh, daemon=True)
-        t.start()
-        gui.run()
+        repl(octree=octree, mesh=mesh)
+        #t = repl.thread(octree=octree, mesh=mesh, daemon=True)
+        #t.start()
+        #gui.run()
 
 
 if __name__ == '__main__':

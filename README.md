@@ -1,4 +1,4 @@
-# Experiments in Exploration
+# Fragmen't
 
 Clone this repository somewhere.
 
@@ -29,6 +29,15 @@ Install dependencies
 Run the demo:
 
     ./env/bin/python3 src/__main__.py
+
+## Headless
+
+The easiest way to run headless (i.e. without an actual display connected) is
+to set the environment variable `GUI_HEADLESS=true`. This doesn't generate any
+images though, so if you want that you will need the X virtual framebuffer,
+Xvfb. Then
+
+    xvfb-run -s '-screen 0 1280x720x24' ./env/bin/python3 src/__main__.py
 
 ## Batch running
 

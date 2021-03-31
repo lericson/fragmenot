@@ -1,23 +1,27 @@
 #!./env/bin/python3
 
 import sys
-from os import path
+from os import chdir
 from glob import glob
+from pathlib import Path
+from contextlib import contextmanager
 
 import yaml
 import trimesh
 import numpy as np
-import networkx as nx
 from trimesh import grouping
 
 import parame
-from utils import ndarrays2graph
+#from utils import ndarrays2graph
 
 
 cfg = parame.Module('precache')
 
 #: Used for our crappy animation maker
 _frame_num = 0
+color_faces_unseen = (255*np.r_[0.5, 0.5, 0.5, 1.0]).astype(np.uint8)
+color_faces_seen   = (255*np.r_[0.9, 0.2, 0.2, 0.4]).astype(np.uint8)
+color_perimeter    = (255*np.r_[0.2, 0.9, 0.2, 1.0]).astype(np.uint8)
 
 
 def check(x, y):
@@ -103,24 +107,27 @@ def perimeter(mesh, faces, *,
         scene = path.scene()
         scene.add_geometry(mesh)
         scene.set_camera(fov=[90, 90])
-        mesh.visual.face_colors[:,     :] = (255*np.r_[0.5, 0.5, 0.5, 1.0]).astype(np.uint8)
-        mesh.visual.face_colors[faces, :] = (255*np.r_[0.9, 0.2, 0.2, 0.4]).astype(np.uint8)
-        path.colors                       = [(255*np.r_[0.2, 0.9, 0.2, 1.0]).astype(np.uint8)]*len(path.entities)
+        face_colors = mesh.visual.face_colors
+        face_colors[:,     :] = color_faces_unseen
+        face_colors[faces, :] = color_faces_seen
+        path.colors           = [color_perimeter]*len(path.entities)
         viewer = gui.make_viewer(scene)
         area = mesh.area_faces[faces].sum()
-        viewer.show_message(f'Perimeter (green): {peri_len:.5g} m\n'
-                            f'Area (red): {area:.5g} sqm\n'
-                            f'IPR: {area*peri_len**2/(1e-5+area**2):.5g}',
+        viewer.show_message(f'Perimeter (green): {peri_len:.0f} m\n'
+                            f'Area (red): {area:.0f} sqm\n'
+                            f'IPR: {area*peri_len**2/(1e-5+area**2):.0f}',
                             key='stats', duration=np.inf)
         if make_animation:
-            for b in [False, False, False]:
+            for b in range(2):
                 pyglet.clock.tick()
                 viewer.switch_to()
                 viewer.dispatch_events()
                 viewer.dispatch_event('on_draw')
                 viewer.flip()
             global _frame_num
-            viewer.save_image(f'step{_frame_num:05d}.png')
+            image_pathname = Path.cwd() / f'step{_frame_num:05d}.png'
+            print('saving screenshot:', image_pathname)
+            viewer.save_image(str(image_pathname))
             _frame_num += 1
             viewer.close()
         else:
@@ -142,7 +149,7 @@ def area(mesh, faces):
 def precompute_cache(pathname, *,
                      skip_check:     cfg.param = False):
 
-    with open(path.join(pathname, 'environ.yaml')) as f:
+    with open(pathname / 'environ.yaml') as f:
         env = yaml.safe_load(f)
 
     parame._environ  = env['environ']
@@ -150,12 +157,11 @@ def precompute_cache(pathname, *,
     p = parame.cfg['profile']
     parame.set_profile(profile=p)
 
-    mesh = trimesh.Trimesh(**np.load(path.join(pathname, 'mesh.npz')))
+    mesh = trimesh.Trimesh(**np.load(pathname / 'mesh.npz'))
 
-    cache_filename = '.plot_cache_v2.npz'
-    cache_pathname = path.join(pathname, cache_filename)
+    cache_pathname = pathname / '.plot_cache_v2.npz'
 
-    S = sorted(glob(path.join(pathname, 'state?????.npz')))
+    S = sorted(glob(str(pathname / 'state?????.npz')))
     assert 10 < len(S) < 5000, f'10 < (len(S) := {len(S)}) < 5000'
 
     S    = [dict(np.load(fn)) for fn in S]
@@ -166,7 +172,7 @@ def precompute_cache(pathname, *,
     if not skip_check:
         check(x, y)
 
-    #roadmap = ndarrays2graph(**np.load(path.join(pathname, 'roadmap.npz')))
+    #roadmap = ndarrays2graph(**np.load(pathname / 'roadmap.npz'))
     #vis_faces = roadmap.graph['vis_faces']
 
     # NOTE I reconstructed roadmap.npz's "vis_faces" after-the-fact for some
@@ -211,16 +217,27 @@ def precompute_cache(pathname, *,
     np.savez(cache_pathname, x=x, y=y, seen=seen, holes=holes)
 
 
+@contextmanager
+def changed_directory(pathname):
+    prev = Path.cwd()
+    chdir(pathname)
+    try:
+        yield
+    finally:
+        chdir(prev)
+
+
 def main(*, pathnames=sys.argv[1:]):
     failed = False
 
     for i, pathname in enumerate(pathnames):
         print(f'{pathname}: precaching plot data')
-        try:
-            precompute_cache(pathname)
-        except Exception as e:
-            print(f'{pathname}: failed: {type(e).__name__}: {e}')
-            failed = True
+        with changed_directory(pathname):
+            try:
+                precompute_cache(Path.cwd())
+            except Exception as e:
+                print(f'{pathname}: failed: {type(e).__name__}: {e}')
+                failed = True
 
     sys.exit(1 if failed else 0)
 

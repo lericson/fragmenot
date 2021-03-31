@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 f = lambda x: (255*x).astype(np.uint8)
 
-color_envmesh          = f(hsva_to_rgba([0.70, 0.20, 0.80, 1.000]))
+color_envmesh          = f(hsva_to_rgba([0.00, 0.00, 0.90, 1.000]))
 color_envmesh_vis      = f(hsva_to_rgba([0.70, 1.00, 0.40, 1.000]))
 color_envmesh_aware    = f(hsva_to_rgba([0.70, 1.00, 0.80, 1.000]))
 color_envmesh_seen     = f(hsva_to_rgba([0.33, 1.00, 0.80, 1.000]))
@@ -161,15 +161,30 @@ def hilight_vis_faces(faces):
 
 
 @noop_when_headless
-def update_face_hsva(*, layer, h, s=1.0, v=1.0, a=1.0):
-    N = _c.envmesh.faces.shape[0]
+def update_face_hsva(*, layer, h, s=1.0, v=1.0, a=1.0, faces=None):
     h, s, v, a = np.atleast_1d(h, s, v, a)
-    hsva = np.empty((N, 4))
+    hsva = np.empty_like(_c.layers[layer][faces, :], dtype=float)
     hsva[:, 0] = h
     hsva[:, 1] = s
     hsva[:, 2] = v
     hsva[:, 3] = a
-    _c.layers[layer][:] = (255*hsva_to_rgba(hsva)).astype(np.uint8)
+    _c.layers[layer][faces, :] = (255.0*hsva_to_rgba(hsva)).astype(np.uint8)
+    _update_if_active(layer)
+
+
+@noop_when_headless
+def update_face_color(color, *, layer, faces=None):
+    colors = _c.layers[layer]
+    colors[faces, :] = color
+    _update_if_active(layer)
+
+
+@noop_when_headless
+def update_face_colormap(x, *, layer, alpha=1.0, faces=None):
+    import turbo
+    colors = _c.layers[layer]
+    colors[faces, 0:3] = 255*turbo.interpolate(x)
+    colors[faces,   3] = 255*alpha
     _update_if_active(layer)
 
 
@@ -335,7 +350,7 @@ def make_viewer(scene, *,
 
     viewer = SceneViewer(scene, resolution=resolution, start_loop=False, **kw)
     #viewer.reset_view(flags=dict(cull=True, grid=True, wireframe=True))
-    viewer.reset_view(flags=dict(perspective=perspective))
+    viewer.reset_view(flags=dict(perspective=perspective, cull=False))
 
     from pyglet import gl
     gl.glLineWidth(line_width)

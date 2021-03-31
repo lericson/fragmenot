@@ -240,10 +240,11 @@ def expand(object T, *, object roadmap):
 
     if weight_function != WF_UNIFORM:
         log.debug('updating face colors')
-        gui.update_face_hsva(h=unit_map((-np.log(face_score/K)/18).clip(0, 1), zero=0.8, one=0.0),
-                             s=1.0*vis_unseen,
-                             v=unit_map(vis_unseen, zero=0.6, one=1.0),
-                             layer='score')
+        gui.update_face_color(gui.color_envmesh, faces=Seen[root], layer='score')
+        gui.update_face_colormap(((covis_area[vis_unseen]-5.0)/10.0).clip(0.05, 1.0),
+                                 faces=vis_unseen, layer='score')
+        #gui.update_face_colormap((-np.log(face_score[vis_unseen]/K)/16).clip(0.0, 1.0),
+        #                         faces=vis_unseen, layer='score')
 
     if weight_function == WF_UNIFORM_COLORED:
         covis_area[:] = 0.0
